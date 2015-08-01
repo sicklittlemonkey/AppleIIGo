@@ -1,0 +1,19 @@
+<project default="jar">	
+	<target name="clean">
+		<delete dir="Build" />
+	</target>
+	
+	<target name="compile">
+		<mkdir dir="Build/classes"/>
+		<javac srcdir="Source" destdir="Build/classes" optimize="yes"/>
+	</target>
+
+	<target name="jar" depends="compile">
+		<mkdir dir="Build/jar"/>
+		<copy todir="Build/classes/Resources">
+			<fileset dir="Resources"/>
+		</copy>
+		<jar destfile="Build/jar/AppleIIGo.jar" basedir="Build/classes"/>
+		<copy file="Build/jar/AppleIIGo.jar" todir="/Users/mressl/Library/Widgets/AppleIIGo.wdgt"/>
+	</target>
+</project>
