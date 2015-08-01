@@ -2,25 +2,32 @@
 /**
  * AppleIIGo
  * The Java Apple II Emulator 
- * (C) 2006 by Marc S. Ressl (ressl@lonetree.com)
- * (C) 2009 by Nick Westgate (Nick.Westgate@gmail.com)
- * Released under the GPL
+ * Copyright 2009 by Nick Westgate (Nick.Westgate@gmail.com)
+ * Copyright 2006 by Marc S. Ressl (ressl@lonetree.com)
+ * Released under the GNU General Public License version 2 
+ * See http://www.gnu.org/licenses/
  * 
  * Change list:
  * 
- * Version 1.0.6 - changes by Nick:
+ * Version 1.0.7 - changes by Nick:
+ * - fixed disk emulation bug (sense write protect entered write mode)
+ * - now honour diskWritable parameter (but writing is not implemented)
+ * - support meta tag for volume number in disk filename eg: Vol2_Meta_DV2.dsk
+ * - added isPaddleEnabled parameter
+ * - exposed setPaddleEnabled(boolean value), setPaddleInverted(boolean value)
+ * - paddle values are now 255 at startup (ie. correct if disabled/not present)
+ * - minor AppleSpeaker fix (SourceDataLine.class) thanks to William Halliburton
  * 
+ * Version 1.0.6 - changes by Nick:
  * - exposed F3/F4 disk swapping method: cycleDisk(int driveNumber)
  * - exposed reset() method 
  * - exposed setSpeed(int value) method
  * 
  * Version 1.0.5 - changes by Nick:
- * 
  * - added support for .NIB (nibble) disk images  (also inside ZIP archives)
  * - added disk speedup hacks for DOS (expect ~2x faster reads)
  * 
  * Version 1.0.4 - changes by Nick:
- *
  * - added support for .PO (ProDOS order) disk images (also inside ZIP archives)
  * - added Command key for Closed-Apple on Mac OS X
  * - added Home and End keys for Open-Apple and Closed-Apple on full keyboards
@@ -66,8 +73,11 @@ import java.util.zip.ZipInputStream;
 public class AppleIIGo extends Applet implements KeyListener, ComponentListener, 
 	MouseListener, MouseMotionListener {
 
-	final String version = "1.0.6";
+	private static final long serialVersionUID = -3302282815441501352L;
+	
+	final String version = "1.0.7";
 	final String versionString = "AppleIIGo Version " + version;
+	final String metaStart = "_meta_";
 
 	// Class instances
 	private EmAppleII apple;
@@ -82,6 +92,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	private boolean keyboardUppercaseOnly;
 
 	// Paddle variables
+	private boolean isPaddleEnabled;
 	private boolean isPaddleInverted;
 	
 	// Disk variables - TODO: refactor into a class
@@ -132,6 +143,10 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		// Keyboard
 		keyboardUppercaseOnly = getAppletParameter("keyboardUppercaseOnly", "true").equals("true");
 
+		// Paddles
+		isPaddleEnabled = getAppletParameter("paddleEnabled", "true").equals("true");
+		isPaddleInverted = getAppletParameter("paddleInverted", "false").equals("true");
+		
 		// Display
 		display = new AppleDisplay(this, apple);
 		display.setScale(new Float(getAppletParameter("displayScale", "1")).floatValue());
@@ -361,8 +376,65 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 			StringBuffer diskname = new StringBuffer();
 			DataInputStream is = openInputStream(resource, diskname);
+			
+			int diskVolumeNumber = DiskII.DEFAULT_VOLUME;
 
-			success = disk.readDisk(drive, is, diskname.toString(), false);
+			// handle disk meta tag for disk volume (etc?)
+			// could break this out into a method, but then multiple tags ...?
+			String lowerDiskname = diskname.toString().toLowerCase();
+			int metaIndex = lowerDiskname.indexOf(metaStart);
+			if (metaIndex != -1)
+			{
+				metaIndex += metaStart.length();
+				int command = 0;
+				int operand = 0;
+				boolean execute = false;
+				while (metaIndex < lowerDiskname.length())
+				{
+					char c = lowerDiskname.charAt(metaIndex++);
+					switch (c)
+					{
+						case '0': case '1':case '2':case '3':case '4':
+						case '5': case '6':case '7':case '8':case '9':
+						{
+							operand = 10 * operand + (c - '0');
+							break;
+						}
+						
+						case '.': // end meta
+							metaIndex = lowerDiskname.length();
+							execute = true;
+							break;
+
+						case '_': // end word
+							execute = true;
+							break;
+							
+						default:
+						{
+							if (c >= 'a' && c <= 'z')
+							{
+								command = (command << 16) + c;
+								execute = (command & 0xFFFF0000) != 0;
+							}
+							break;
+						}
+					}
+					if (execute)
+					{
+						switch (command)
+						{
+							case ('d' << 16) + 'v':
+								diskVolumeNumber = operand;
+								break;
+						}
+						command = 0;
+						operand = 0;
+					}
+				}
+			}
+			
+			success = disk.readDisk(drive, is, diskname.toString(), !diskWritable, diskVolumeNumber);
 			is.close();
 			showStatus("Drive " + (drive + 1) + ": " + resource);
 		} catch (Exception e) {
@@ -377,7 +449,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	 */
 	public void unmountDisk(int drive) {
 		debug("unmountDisk(drive: " + drive + ")");
-		if ((drive < 0) || (drive > 2))
+		if ((drive < 0) || (drive > 1))
 			return;
 
 		if (!diskWritable)
@@ -400,13 +472,34 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	}
 
 	/**
+ 	 * Set paddle enabled/disabled
+	 */
+	public void setPaddleEnabled(boolean value) {
+		debug("setPaddleEnabled(value: " + value + ")");
+		isPaddleEnabled = value;
+		if (!value)
+		{
+			apple.paddle.setPaddlePos(0, Paddle.PADDLE_HIGH);
+			apple.paddle.setPaddlePos(1, Paddle.PADDLE_HIGH);
+			apple.paddle.setButton(0, false);
+			apple.paddle.setButton(1, false);
+		}
+	}
+
+	/**
+ 	 * Set paddle inverted/normal
+	 */
+	public void setPaddleInverted(boolean value) {
+		debug("setPaddleInverted(value: " + value + ")");
+		isPaddleInverted = value;
+	}
+
+	/**
  	 * Get disk activity
 	 */
 	public boolean getDiskActivity() {
 		return (!isCpuPaused && disk.isMotorOn());
 	}
-	
-	
 
 	/**
  	 * KeyListener event handling
@@ -575,11 +668,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			// else fall through
 		case KeyEvent.VK_KP_LEFT:
 		case KeyEvent.VK_KP_RIGHT:
-			if (isPaddleInverted) {
-				apple.paddle.setPaddlePos(1, 127);
-			} else {
-				apple.paddle.setPaddlePos(0, 127);
-			}
+			handleKeypadCentreX();
 			break;
 		case KeyEvent.VK_UP:
 		case KeyEvent.VK_DOWN:
@@ -588,11 +677,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			// else fall through
 		case KeyEvent.VK_KP_UP:
 		case KeyEvent.VK_KP_DOWN:
-			if (isPaddleInverted) {
-				apple.paddle.setPaddlePos(0, 127);
-			} else {
-				apple.paddle.setPaddlePos(1, 127);
-			}
+			handleKeypadCentreY();
 			break;
 		case KeyEvent.VK_HOME:
 			if (!e.isControlDown())
@@ -604,36 +689,70 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		}
     }
 
+	private void handleKeypadCentreX() {
+		if (isPaddleEnabled)
+		{
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(1, 127);
+			} else {
+				apple.paddle.setPaddlePos(0, 127);
+			}
+		}
+	}
+
+	private void handleKeypadCentreY() {
+		if (isPaddleEnabled)
+		{
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(0, 127);
+			} else {
+				apple.paddle.setPaddlePos(1, 127);
+			}
+		}
+	}
+
 	private void handleKeypadLeft() {
+		if (isPaddleEnabled)
+		{
 			if (isPaddleInverted) {
 				apple.paddle.setPaddlePos(1, 255);
 			} else {
 				apple.paddle.setPaddlePos(0, 0);
 			}
+		}
 	}
 
 	private void handleKeypadRight() {
+		if (isPaddleEnabled)
+		{
 			if (isPaddleInverted) {
 				apple.paddle.setPaddlePos(1, 0);
 			} else {
 				apple.paddle.setPaddlePos(0, 255);
 			}
+		}
 	}
 
 	private void handleKeypadUp() {
+		if (isPaddleEnabled)
+		{
 			if (isPaddleInverted) {
 				apple.paddle.setPaddlePos(0, 255);
 			} else {
 				apple.paddle.setPaddlePos(1, 0);
 			}
+		}
 	}
 
 	private void handleKeypadDown() {
+		if (isPaddleEnabled)
+		{
 			if (isPaddleInverted) {
 				apple.paddle.setPaddlePos(0, 0);
 			} else {
 				apple.paddle.setPaddlePos(1, 255);
 			}
+		}
 	}
 
 	/**
@@ -677,20 +796,24 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 	public void mousePressed(MouseEvent e) {
 		int modifiers = e.getModifiers();
-		
-		if ((modifiers & InputEvent.BUTTON1_MASK) != 0)
-			apple.paddle.setButton(0, true);
-		if ((modifiers & InputEvent.BUTTON3_MASK) != 0)
-			apple.paddle.setButton(1, true);
+		if (isPaddleEnabled)
+		{
+			if ((modifiers & InputEvent.BUTTON1_MASK) != 0)
+				apple.paddle.setButton(0, true);
+			if ((modifiers & InputEvent.BUTTON3_MASK) != 0)
+				apple.paddle.setButton(1, true);
+		}
 	}
 
 	public void mouseReleased(MouseEvent e) {
 		int modifiers = e.getModifiers();
-		
-		if ((modifiers & InputEvent.BUTTON1_MASK) != 0)
-			apple.paddle.setButton(0, false);
-		if ((modifiers & InputEvent.BUTTON3_MASK) != 0)
-			apple.paddle.setButton(1, false);
+		if (isPaddleEnabled)
+		{
+			if ((modifiers & InputEvent.BUTTON1_MASK) != 0)
+				apple.paddle.setButton(0, false);
+			if ((modifiers & InputEvent.BUTTON3_MASK) != 0)
+				apple.paddle.setButton(1, false);
+		}
 	}
 
 	public void mouseDragged(MouseEvent e) {
@@ -699,12 +822,15 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 	public void mouseMoved(MouseEvent e) {
 		float scale = display.getScale();
-		if (isPaddleInverted) {
-			apple.paddle.setPaddlePos(0, (int) (255 - e.getY() * 256 / (192 * scale)));
-			apple.paddle.setPaddlePos(1, (int) (255 - e.getX() * 256 / (280 * scale)));
-		} else {
-			apple.paddle.setPaddlePos(0, (int) (e.getX() * 256 / (280 * scale)));
-			apple.paddle.setPaddlePos(1, (int) (e.getY() * 256 / (192 * scale)));
+		if (isPaddleEnabled)
+		{
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(0, (int) (255 - e.getY() * 256 / (192 * scale)));
+				apple.paddle.setPaddlePos(1, (int) (255 - e.getX() * 256 / (280 * scale)));
+			} else {
+				apple.paddle.setPaddlePos(0, (int) (e.getX() * 256 / (280 * scale)));
+				apple.paddle.setPaddlePos(1, (int) (e.getY() * 256 / (192 * scale)));
+			}
 		}
 	}
 

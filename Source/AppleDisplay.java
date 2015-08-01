@@ -459,8 +459,8 @@ public class AppleDisplay implements Runnable {
 		boolean isDoubleTextMode = ((graphicsMode & EmAppleII.GR_80CHAR) == EmAppleII.GR_80CHAR);
 		boolean isDoubleGraphicsMode = ((graphicsMode & (EmAppleII.GR_80CHAR | EmAppleII.GR_DHIRES)) == (EmAppleII.GR_80CHAR | EmAppleII.GR_DHIRES));
 
-		int baseAddressText = isPage2 ? apple.MEM_MAIN_RAM2 : apple.MEM_MAIN_TEXT;
-		int baseAddressHires = isPage2 ? apple.MEM_MAIN_RAM3 : apple.MEM_MAIN_HIRES;
+		int baseAddressText = isPage2 ? EmAppleII.MEM_MAIN_RAM2 : EmAppleII.MEM_MAIN_TEXT;
+		int baseAddressHires = isPage2 ? EmAppleII.MEM_MAIN_RAM3 : EmAppleII.MEM_MAIN_HIRES;
 
 		// Set char map
 		if (isCharsetUpdateRequested) {
@@ -769,7 +769,7 @@ public class AppleDisplay implements Runnable {
 	}
 	private void renderText(int baseAddress, boolean isMixedMode) {
 		int screenCharY, screenCharYStart = isMixedMode ? 20 : 0;
-		int displayOffset, sourceOffset;
+		int displayOffset;
 		int address, addressEnd, addressStart;
 		
 		displayOffset = screenCharYStart * DISPLAY_CHAR_SIZE_Y * DISPLAY_SIZE_X;
@@ -820,7 +820,7 @@ public class AppleDisplay implements Runnable {
 	}
 	private void renderDoubleText(int baseAddress, boolean isMixedMode) {
 		int screenCharY, screenCharYStart = isMixedMode ? 20 : 0;
-		int displayOffset, sourceOffset;
+		int displayOffset;
 		int address, addressEnd, addressStart;
 		
 		displayOffset = screenCharYStart * DISPLAY_CHAR_SIZE_Y * DISPLAY_SIZE_X;
@@ -873,7 +873,7 @@ public class AppleDisplay implements Runnable {
 	}
 	private void renderLores(int baseAddress, boolean isMixedMode) {
 		int screenCharY, screenCharYEnd = isMixedMode ? 20 : 24;
-		int displayOffset, sourceOffset;
+		int displayOffset;
 		int address, addressEnd, addressStart;
 		
 		displayOffset = 0;
@@ -904,7 +904,7 @@ public class AppleDisplay implements Runnable {
 	 */
 	private void renderDoubleLores(int baseAddress, boolean isMixedMode) {
 		int screenCharY, screenCharYEnd = isMixedMode ? 20 : 24;
-		int displayOffset, sourceOffset;
+		int displayOffset;
 		int address, addressEnd, addressStart;
 		
 		displayOffset = 0;
@@ -998,7 +998,7 @@ public class AppleDisplay implements Runnable {
 	}
 	private void renderHires(int baseAddress, boolean isMixedMode) {
 		int screenCharY, screenCharYEnd = isMixedMode ? 20 : 24;
-		int displayOffset, sourceOffset;
+		int displayOffset;
 		int address, addressEnd, addressStart;
 		
 		displayOffset = 0;
@@ -1089,7 +1089,7 @@ public class AppleDisplay implements Runnable {
 	}	
 	private void renderDoubleHires(int baseAddress, boolean isMixedMode) {
 		int screenCharY, screenCharYEnd = isMixedMode ? 20 : 24;
-		int displayOffset, sourceOffset;
+		int displayOffset;
 		int address, addressEnd, addressStart;
 		
 		displayOffset = 0;

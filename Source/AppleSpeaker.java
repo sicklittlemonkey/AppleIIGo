@@ -13,7 +13,7 @@ public class AppleSpeaker implements Runnable {
 	private EmAppleII apple;
 
 	// Refresh
-	private int refreshRate;
+//	private int refreshRate;
 	private long refreshInterval;
 
 	// Sound stuff
@@ -58,7 +58,7 @@ public class AppleSpeaker implements Runnable {
 		if (value <= 0.0f)
 			return;
 			
-		this.refreshRate = value;
+//		this.refreshRate = value;
 		refreshInterval = (int) (1000.0 / value);
 
 		speakerClocksPerSample = (int) (apple.getCpuSpeed() * 1000.0f / SPEAKER_SAMPLERATE);
@@ -67,9 +67,9 @@ public class AppleSpeaker implements Runnable {
 	/**
 	 * Get refresh rate
 	 */
-	private int getRefreshRate() {
-		return refreshRate;
-	}
+//	private int getRefreshRate() {
+//		return refreshRate;
+//	}
 	
 	/**
 	 * Set speaker volume
@@ -120,7 +120,7 @@ public class AppleSpeaker implements Runnable {
 				SPEAKER_BIGENDIAN);
 
 			DataLine.Info info = new DataLine.Info(
-				DataLine.class,
+				SourceDataLine.class,
 				audioFormat);
 
 			try {

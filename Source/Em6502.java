@@ -183,11 +183,11 @@ public class Em6502 {
 	private final void setFC(boolean c) {result = (c ? 0x100 : 0x00);}
 
 	/*
-	 * Macro for page crossing cycle regulation
+	 * Macro for page crossing cycle regulation - TODO: Why not used!? CPU probably not cycle accurate.
 	 */
-	private final void checkCrossPage(int addr, int offset) {
-		if ((((addr + offset) ^ addr) & 0xff00) != 0) clock++;
-	}
+//	private final void checkCrossPage(int addr, int offset) {
+//		if ((((addr + offset) ^ addr) & 0xff00) != 0) clock++;
+//	}
 	
 	/*
 	 * Macros for effective address calculation 
@@ -1539,6 +1539,9 @@ public class Em6502 {
 		default:	// unknown instructions
 			clock += 2;
 		}
+		
+//		if (PC == 0xB30)
+//			throw (new RuntimeException()); // TODO: for breakpoint hack - disable
 	}
 	
 	public final int executeInstructions(int num) {

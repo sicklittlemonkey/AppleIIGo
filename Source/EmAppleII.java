@@ -74,8 +74,9 @@ public class EmAppleII extends Em6502 implements Runnable {
 	public static final int GR_DHIRES	= (1 << 7);
 
 	// Sound
-	public static final int SPEAKER_FLIPS_SIZE = 4096;
-	public static final int SPEAKER_FLIPS_MASK = 4095;
+	public static final int SPEAKER_FLIPS_BITS = 12;
+	public static final int SPEAKER_FLIPS_SIZE = 1 << SPEAKER_FLIPS_BITS;
+	public static final int SPEAKER_FLIPS_MASK = SPEAKER_FLIPS_SIZE - 1;
 	
 	public int speakerFlips[] = new int[SPEAKER_FLIPS_SIZE];
 	public int speakerFlipsPointer = 0;
@@ -1126,6 +1127,7 @@ public class EmAppleII extends Em6502 implements Runnable {
 				
 				checkInterrupts();
 
+//				try {
 				if (isStepMode) {
 					if (isNextStep) {
 						isNextStep = false;
@@ -1136,6 +1138,11 @@ public class EmAppleII extends Em6502 implements Runnable {
 					while (clocksNeeded > 0)
 						clocksNeeded -= executeInstructions(1 + (clocksNeeded >> 3));
 				}
+//				}
+//				catch (RuntimeException e)
+//				{
+//					setStepMode(true); // TODO: for breakpoint hack - disable
+//				}
 
 				// TODO: need something like the following for fast disk access
 				//if (slots[6] instanceof DiskII && !((DiskII)slots[6]).isMotorOn())

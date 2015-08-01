@@ -37,6 +37,7 @@ public class DiskII extends Peripheral {
 	private static final int DOS_NUM_TRACKS = 35;
 	private static final int DOS_TRACK_BYTES = 256 * DOS_NUM_SECTORS;
 	private static final int RAW_TRACK_BYTES = 0x1A00; // 0x1A00 (6656) for .NIB (was 6250)
+	public static final int DEFAULT_VOLUME = 254;
 	
 	// Disk II direct access variables
 	private int drive = 0;
@@ -108,8 +109,8 @@ public class DiskII extends Peripheral {
 		super();
 		this.apple = apple;
 		
-		readDisk(0, null, "", false);
-		readDisk(1, null, "", false);
+		readDisk(0, null, "", false, DEFAULT_VOLUME);
+		readDisk(1, null, "", false, DEFAULT_VOLUME);
 	}
 	
 	/**
@@ -137,6 +138,7 @@ public class DiskII extends Peripheral {
 					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
 						currPhysTrack++;
 				}
+				//System.out.println("half track=" + currPhysTrack);
 				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0x3:
@@ -149,6 +151,7 @@ public class DiskII extends Peripheral {
 					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
 						currPhysTrack++;
 				}
+				//System.out.println("half track=" + currPhysTrack);
 				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0x5:
@@ -161,6 +164,7 @@ public class DiskII extends Peripheral {
 					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
 						currPhysTrack++;
 				}
+				//System.out.println("half track=" + currPhysTrack);
 				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0x7:
@@ -173,6 +177,7 @@ public class DiskII extends Peripheral {
 					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
 						currPhysTrack++;
 				}
+				//System.out.println("half track=" + currPhysTrack);
 				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0x8:
@@ -272,12 +277,12 @@ public class DiskII extends Peripheral {
 	 * @param	is			InputStream
 	 * @param	drive		Disk II drive
 	 */
-	public boolean readDisk(int drive, DataInputStream is, String name, boolean isWriteProtected) {
+	public boolean readDisk(int drive, DataInputStream is, String name, boolean isWriteProtected, int volumeNumber) {
 		byte[] track = new byte[DOS_TRACK_BYTES];
 
-		String lowerDiskname = name.toLowerCase();
-		boolean proDos = lowerDiskname.indexOf(".po") != -1;
-		boolean nib = lowerDiskname.indexOf(".nib") != -1;
+		String lowerName = name.toLowerCase();
+		boolean proDos = lowerName.indexOf(".po") != -1;
+		boolean nib = lowerName.indexOf(".nib") != -1;
 		
 		try {
 			for (int trackNum = 0; trackNum < DOS_NUM_TRACKS; trackNum++) {
@@ -291,7 +296,7 @@ public class DiskII extends Peripheral {
 					else
 					{
 						is.readFully(track, 0, DOS_TRACK_BYTES);
-						trackToNibbles(track, diskData[drive][trackNum], 254, trackNum, !proDos);
+						trackToNibbles(track, diskData[drive][trackNum], volumeNumber, trackNum, !proDos);
 					}
 				}
 			}
@@ -341,10 +346,10 @@ public class DiskII extends Peripheral {
 		{
 			// Read data: C0xE, C0xC
 			latchData = (realTrack[currNibble] & 0xff);
-			
+
 			// simple hack to help DOS find address prologues ($B94F)
-			if (apple.memoryRead(apple.PC + 3) == 0xD5 && // #$D5
-				latchData != 0xD5 &&
+			if (/* fastDisk && */ latchData != 0xD5 && // TODO: fastDisk property to enable/disable 
+				apple.memoryRead(apple.PC + 3) == 0xD5 && // #$D5
 				apple.memoryRead(apple.PC + 2) == 0xC9 && // CMP
 				apple.memoryRead(apple.PC + 1) == 0xFB && // PC - 3
 				apple.memoryRead(apple.PC + 0) == 0x10)   // BPL
@@ -359,7 +364,7 @@ public class DiskII extends Peripheral {
 				}
 				while (latchData != 0xD5 && --count > 0);
 			}
-			// simple hack to fool DOS drive spin detect routine ($BD34)
+			// simple hack to fool DOS 3.3 RWTS drive spin detect routine ($BD34)
 			else if (apple.memoryRead(apple.PC - 3) == 0xDD && // CMP $C08C,X
 				apple.memoryRead(apple.PC + 1) == 0x03 &&      // PC + 3 
 				apple.memoryRead(apple.PC + 0) == 0xD0)        // BNE
@@ -394,9 +399,7 @@ public class DiskII extends Peripheral {
 	 * @param	address	Address
 	 */
 	private void ioLatchD(int value) {
-		// Prepare write
-		writeMode = true;
-		latchData = value;
+		// Prepare for write protect sense
 		latchAddress = 0xd;
 	}
 	

@@ -22,7 +22,7 @@ public class Paddle {
 	private int[] buttonRegister = new int[4];
 
 	// Paddle variables
-	private int paddleMode;
+	// private int paddleMode; // TODO: Was this for analog/digital mode? (Nick)
 
 	private int[] paddleClockEvent = new int[4];
 	private int[] paddleClockInc = new int[4];
@@ -35,10 +35,10 @@ public class Paddle {
 	public Paddle(EmAppleII apple) {
 		this.apple = apple;
 
-		setPaddlePos(0, PADDLE_CENTER);
-		setPaddlePos(1, PADDLE_CENTER);
-		setPaddlePos(2, PADDLE_CENTER);
-		setPaddlePos(3, PADDLE_CENTER);
+		setPaddlePos(0, PADDLE_HIGH);
+		setPaddlePos(1, PADDLE_HIGH);
+		setPaddlePos(2, PADDLE_HIGH);
+		setPaddlePos(3, PADDLE_HIGH);
 	}
 	
 	/**
