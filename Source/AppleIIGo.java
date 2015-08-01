@@ -3,11 +3,17 @@
  * AppleIIGo
  * The Java Apple II Emulator 
  * (C) 2006 by Marc S. Ressl (ressl@lonetree.com)
- * (C) 2008 by Nick Westgate (Nick.Westgate@gmail.com)
+ * (C) 2009 by Nick Westgate (Nick.Westgate@gmail.com)
  * Released under the GPL
  * 
  * Change list:
  * 
+ * Version 1.0.3 - changes by Nick:
+ * - fixed paddle values for scaled display window
+ * - added "digital" joystick support via numeric keypad arrows
+ * - added Left-Alt and Right-Alt keys for Open-Apple and Closed-Apple 
+ * - changed reset key from Home to Ctrl-F12 and Ctrl-Pause/Break
+ *
  * Version 1.0.2 - changes by Nick:
  * - improved sound sync by moving AppleSpeaker into the main thread
  * - added version (F1)
@@ -42,7 +48,7 @@ import java.util.zip.ZipInputStream;
 public class AppleIIGo extends Applet implements KeyListener, ComponentListener, 
 	MouseListener, MouseMotionListener {
 
-	final String version = "1.0.2";
+	final String version = "1.0.3";
 	final String versionString = "AppleIIGo Version " + version;
 
 	// Class instances
@@ -354,24 +360,64 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
     public void keyPressed(KeyEvent e) {
 		switch(e.getKeyCode()) {
+		case KeyEvent.VK_ALT:
+			if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_LEFT)
+			{
+				apple.paddle.setButton(0, true);
+			}
+			else if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_RIGHT)
+			{
+				apple.paddle.setButton(1, true);
+			}
+			break;
 		case KeyEvent.VK_BACK_SPACE:
 		case KeyEvent.VK_LEFT:
-			apple.setKeyLatch(8);
+			if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_NUMPAD)
+			{
+				handleKeypadLeft();
+			}
+			else
+			{
+				apple.setKeyLatch(8);
+			}
 			break;
 		case KeyEvent.VK_RIGHT:
-			apple.setKeyLatch(21);
+			if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_NUMPAD)
+			{
+				handleKeypadRight();
+			}
+			else
+			{
+				apple.setKeyLatch(21);
+			}
 			break;
 		case KeyEvent.VK_UP:
 			if (e.isControlDown())
-			    apple.speaker.setVolume(apple.speaker.getVolume() + 1);
+			{
+				apple.speaker.setVolume(apple.speaker.getVolume() + 1);
+			}
+			else if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_NUMPAD)
+			{
+				handleKeypadUp();
+			}
 			else
+			{
 				apple.setKeyLatch(11);
+			}
 			break;
 		case KeyEvent.VK_DOWN:
 			if (e.isControlDown())
-			    apple.speaker.setVolume(apple.speaker.getVolume() - 1);
+			{
+				apple.speaker.setVolume(apple.speaker.getVolume() - 1);
+			}
+			else if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_NUMPAD)
+			{
+				handleKeypadDown();
+			}
 			else
+			{
 				apple.setKeyLatch(10);
+			}
 			break;
 		case KeyEvent.VK_ESCAPE:
 			apple.setKeyLatch(27);
@@ -381,9 +427,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			break;
 		case KeyEvent.VK_HOME:
 			if (e.isControlDown())
-				apple.restart();
-			else
-				apple.reset();
+				apple.restart(); 
 			break;
 		case KeyEvent.VK_F1:
 			showStatus("AppleIIGo Version " + version);
@@ -422,12 +466,99 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 				apple.stepInstructions(128);
 			}
 			break;
+		case KeyEvent.VK_CANCEL: // Ctrl-Pause/Break sends this (N/A on Mac)
+		case KeyEvent.VK_F12:
+			if (e.isControlDown())
+				apple.reset();
+			break;
+		case KeyEvent.VK_KP_LEFT:
+			handleKeypadLeft();
+			break;
+		case KeyEvent.VK_KP_RIGHT:
+			handleKeypadRight();
+			break;
+		case KeyEvent.VK_KP_UP:
+			handleKeypadUp();
+			break;
+		case KeyEvent.VK_KP_DOWN:
+			handleKeypadDown();
+			break;
 		}
     }
 
     public void keyReleased(KeyEvent e) {
+		switch(e.getKeyCode()) {
+		case KeyEvent.VK_ALT:
+			if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_LEFT)
+			{
+				apple.paddle.setButton(0, false);
+			}
+			else if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_RIGHT)
+			{
+				apple.paddle.setButton(1, false);
+			}
+			break;
+		case KeyEvent.VK_LEFT:
+		case KeyEvent.VK_RIGHT:
+			if (e.getKeyLocation() != KeyEvent.KEY_LOCATION_NUMPAD)
+				break;
+			// else fall through
+		case KeyEvent.VK_KP_LEFT:
+		case KeyEvent.VK_KP_RIGHT:
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(1, 127);
+			} else {
+				apple.paddle.setPaddlePos(0, 127);
+			}
+			break;
+		case KeyEvent.VK_UP:
+		case KeyEvent.VK_DOWN:
+			if (e.getKeyLocation() != KeyEvent.KEY_LOCATION_NUMPAD)
+				break;
+			// else fall through
+		case KeyEvent.VK_KP_UP:
+		case KeyEvent.VK_KP_DOWN:
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(0, 127);
+			} else {
+				apple.paddle.setPaddlePos(1, 127);
+			}
+			break;
+		}
     }
-	
+
+	private void handleKeypadLeft() {
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(1, 255);
+			} else {
+				apple.paddle.setPaddlePos(0, 0);
+			}
+	}
+
+	private void handleKeypadRight() {
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(1, 0);
+			} else {
+				apple.paddle.setPaddlePos(0, 255);
+			}
+	}
+
+	private void handleKeypadUp() {
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(0, 255);
+			} else {
+				apple.paddle.setPaddlePos(1, 0);
+			}
+	}
+
+	private void handleKeypadDown() {
+			if (isPaddleInverted) {
+				apple.paddle.setPaddlePos(0, 0);
+			} else {
+				apple.paddle.setPaddlePos(1, 255);
+			}
+	}
+
 	/**
  	 * ComponentListener event handling
 	 */	
@@ -490,12 +621,13 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	}
 
 	public void mouseMoved(MouseEvent e) {
+		float scale = display.getScale();
 		if (isPaddleInverted) {
-			apple.paddle.setPaddlePos(0, (int) (display.getScale() * (255 - e.getY() * 256 / 192)));
-			apple.paddle.setPaddlePos(1, (int) (display.getScale() * (255 - e.getX() * 256 / 280)));
+			apple.paddle.setPaddlePos(0, (int) (255 - e.getY() * 256 / (192 * scale)));
+			apple.paddle.setPaddlePos(1, (int) (255 - e.getX() * 256 / (280 * scale)));
 		} else {
-			apple.paddle.setPaddlePos(0, (int) (e.getX() * display.getScale() * 256 / 280));
-			apple.paddle.setPaddlePos(1, (int) (e.getY() * display.getScale() * 256 / 192));
+			apple.paddle.setPaddlePos(0, (int) (e.getX() * 256 / (280 * scale)));
+			apple.paddle.setPaddlePos(1, (int) (e.getY() * 256 / (192 * scale)));
 		}
 	}
 

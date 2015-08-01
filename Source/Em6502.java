@@ -1567,13 +1567,14 @@ public class Em6502 {
 		if ((exceptionRegister & SIG_6502_RESET) != 0) {
 			onReset();
 			
-			A = X = Y = 0;
-			P = 0x20;
-			setFC(getC());
-			setFNZ(getN(), getZ());
-			S = 0xff;
 			PC = memoryRead(0xfffc);
 			PC |= (memoryRead(0xfffd) << 8);
+			S = (S - 3) & 0xff;
+			setI(true);
+			setD(false); // not on NMOS 6502
+			setFC(getC());
+			setFNZ(getN(), getZ());
+			clock += 7;
 			exceptionRegister &= ~SIG_6502_RESET;
 		}
 		
