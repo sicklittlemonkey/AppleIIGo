@@ -8,6 +8,12 @@
  * 
  * Change list:
  * 
+ * Version 1.0.4 - changes by Nick:
+ *
+ * - added support for .PO (ProDOS order) disk images (also inside ZIP archives)
+ * - added Command key for Closed-Apple on Mac OS X
+ * - added Home and End keys for Open-Apple and Closed-Apple on full keyboards
+ *
  * Version 1.0.3 - changes by Nick:
  * - fixed paddle values for scaled display window
  * - added "digital" joystick support via numeric keypad arrows
@@ -39,6 +45,7 @@ import java.io.OutputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
@@ -48,7 +55,7 @@ import java.util.zip.ZipInputStream;
 public class AppleIIGo extends Applet implements KeyListener, ComponentListener, 
 	MouseListener, MouseMotionListener {
 
-	final String version = "1.0.3";
+	final String version = "1.0.4";
 	final String versionString = "AppleIIGo Version " + version;
 
 	// Class instances
@@ -216,8 +223,15 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	 * Open input stream
 	 */
 	private DataInputStream openInputStream(String resource) {
+		return openInputStream(resource, null);
+	}
+
+	private DataInputStream openInputStream(String resource, StringBuffer OutFilename) {
 		InputStream is = null;
-		
+
+		if (OutFilename != null)
+			OutFilename.setLength(0);
+
 		try {
 			URL url = new URL(getCodeBase(), resource);
 			debug("resource: " + url.toString());
@@ -230,7 +244,21 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			else if (resource.toLowerCase().endsWith(".zip"))
 			{
 				is = new ZipInputStream(is);
-				((ZipInputStream)is).getNextEntry();
+				ZipEntry entry = ((ZipInputStream)is).getNextEntry();
+				if (OutFilename != null)
+				{
+					OutFilename.append(entry.getName());
+				}
+			}
+			else
+			{
+				if (OutFilename != null)
+				{
+					int slashPos = resource.lastIndexOf('/');
+					int backslashPos = resource.lastIndexOf('\\');
+					int index = Math.max(slashPos, backslashPos);
+					OutFilename.append(resource.substring((index > 0) ? index : 0));
+				}
 			}
 		} catch (Exception e) {
 			debug("Exeption: " + e.getLocalizedMessage());
@@ -296,8 +324,12 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 			diskDriveResource[drive] = resource;
 
-			DataInputStream is = openInputStream(resource);
-			success = disk.readDisk(drive, is, 254, false);
+			StringBuffer diskname = new StringBuffer();
+			DataInputStream is = openInputStream(resource, diskname);
+			String lowerDiskname = diskname.toString().toLowerCase();
+			boolean dos = lowerDiskname.indexOf(".po") == -1;
+
+			success = disk.readDisk(drive, is, 254, dos, false);
 			is.close();
 		} catch (Exception e) {
 			debug("Exeption: " + e.getLocalizedMessage());
@@ -360,6 +392,10 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
     public void keyPressed(KeyEvent e) {
 		switch(e.getKeyCode()) {
+			
+		case KeyEvent.VK_META:
+			apple.paddle.setButton(1, true);
+			break;
 		case KeyEvent.VK_ALT:
 			if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_LEFT)
 			{
@@ -427,7 +463,12 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			break;
 		case KeyEvent.VK_HOME:
 			if (e.isControlDown())
-				apple.restart(); 
+				apple.restart();
+			else
+				apple.paddle.setButton(0, true);
+			break;
+		case KeyEvent.VK_END:
+			apple.paddle.setButton(1, true);
 			break;
 		case KeyEvent.VK_F1:
 			showStatus("AppleIIGo Version " + version);
@@ -488,6 +529,9 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
     public void keyReleased(KeyEvent e) {
 		switch(e.getKeyCode()) {
+		case KeyEvent.VK_META:
+			apple.paddle.setButton(1, false);
+			break;
 		case KeyEvent.VK_ALT:
 			if (e.getKeyLocation() == KeyEvent.KEY_LOCATION_LEFT)
 			{
@@ -524,6 +568,13 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 				apple.paddle.setPaddlePos(1, 127);
 			}
 			break;
+		case KeyEvent.VK_HOME:
+			if (!e.isControlDown())
+			{
+				apple.paddle.setButton(0, false);
+			}
+		case KeyEvent.VK_END:
+			apple.paddle.setButton(1, false);
 		}
     }
 

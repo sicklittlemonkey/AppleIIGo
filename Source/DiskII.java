@@ -85,9 +85,14 @@ public class DiskII extends Peripheral {
 	private int[] gcrBuffer2 = new int[86];
 	
 	// Physical sector to DOS 3.3 logical sector table
-	private static final int[] gcrLogicalSector = {
+	private static final int[] gcrLogicalDos33Sector = {
 		0x0, 0x7, 0xE, 0x6, 0xD, 0x5, 0xC, 0x4,
 		0xB, 0x3, 0xA, 0x2, 0x9, 0x1, 0x8, 0xF };
+	
+	// Physical sector to DOS 3.3 logical sector table
+	private static final int[] gcrLogicalProdosSector = {
+		0x0, 0x8, 0x1, 0x9, 0x2, 0xA, 0x3, 0xB,
+		0x4, 0xC, 0x5, 0xD, 0x6, 0xE, 0x7, 0xF };
 	
 	// Temporary variables for conversion
 	private byte[] gcrNibbles = new byte[RAW_TRACK_BYTES];
@@ -101,8 +106,8 @@ public class DiskII extends Peripheral {
 	public DiskII() {
 		super();
 		
-		readDisk(0, null, 254, false);
-		readDisk(1, null, 254, false);
+		readDisk(0, null, 254, true, false);
+		readDisk(1, null, 254, true, false);
 	}
 	
 	/**
@@ -265,7 +270,7 @@ public class DiskII extends Peripheral {
 	 * @param	is			InputStream
 	 * @param	drive		Disk II drive
 	 */
-	public boolean readDisk(int drive, DataInputStream is, int volume, boolean isWriteProtected) {
+	public boolean readDisk(int drive, DataInputStream is, int volume, boolean dos, boolean isWriteProtected) {
 		byte[] track = new byte[RAW_TRACK_BYTES];
 
 		try {
@@ -274,7 +279,7 @@ public class DiskII extends Peripheral {
 
 				if (is != null) {
 					is.readFully(track, 0, DOS_TRACK_BYTES);
-					trackToNibbles(track, disk[drive][trackNum], volume, trackNum);
+					trackToNibbles(track, disk[drive][trackNum], volume, trackNum, dos);
 				}
 			}
 
@@ -487,12 +492,13 @@ public class DiskII extends Peripheral {
 	/**
  	 * Converts a track to nibbles
 	 */
-	private void trackToNibbles(byte[] track, byte[] nibbles, int volumeNum, int trackNum) {
+	private void trackToNibbles(byte[] track, byte[] nibbles, int volumeNum, int trackNum, boolean dos) {
 		this.gcrNibbles = nibbles;
 		gcrNibblesPos = 0;
+		int logicalSector[] = (dos) ? gcrLogicalDos33Sector : gcrLogicalProdosSector;
 
 		for (int sectorNum = 0; sectorNum < DOS_NUM_SECTORS; sectorNum++) {
-			encode62(track, gcrLogicalSector[sectorNum] << 8);
+			encode62(track, logicalSector[sectorNum] << 8);
 			writeSync(12);
 			writeAddressField(volumeNum, trackNum, sectorNum);
 			writeSync(8);
