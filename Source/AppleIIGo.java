@@ -8,6 +8,12 @@
  * 
  * Change list:
  * 
+ * Version 1.0.6 - changes by Nick:
+ * 
+ * - exposed F3/F4 disk swapping method: cycleDisk(int driveNumber)
+ * - exposed reset() method 
+ * - exposed setSpeed(int value) method
+ * 
  * Version 1.0.5 - changes by Nick:
  * 
  * - added support for .NIB (nibble) disk images  (also inside ZIP archives)
@@ -28,7 +34,7 @@
  * Version 1.0.2 - changes by Nick:
  * - improved sound sync by moving AppleSpeaker into the main thread
  * - added version (F1)
- * - added multiple disks & switching (F3, F4)
+ * - added multiple disks & swapping (F3, F4)
  * - added ZIP archive support
  * - fixed HTTP disk image access bug
  */
@@ -60,7 +66,7 @@ import java.util.zip.ZipInputStream;
 public class AppleIIGo extends Applet implements KeyListener, ComponentListener, 
 	MouseListener, MouseMotionListener {
 
-	final String version = "1.0.5";
+	final String version = "1.0.6";
 	final String versionString = "AppleIIGo Version " + version;
 
 	// Class instances
@@ -78,13 +84,11 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	// Paddle variables
 	private boolean isPaddleInverted;
 	
-	// Disk variables
+	// Disk variables - TODO: refactor into a class
 	private String diskDriveResource[] = new String[2];
 	private boolean diskWritable;
-	private String[] disks0;
-	private String[] disks1;
-	private int disk0;
-	private int disk1;
+	private String[][] diskImageNames = {{}, {}};
+	private int diskImageNumber[] = {0, 0};
 
 	/**
  	 * Debug
@@ -146,12 +150,12 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 		// Initialize disk drives
 		diskWritable = getAppletParameter("diskWritable", "false").equals("true");
-		disks0 = getAppletParameter("diskDrive1", "").split("[|]");
-		disk0 = 0;
-		disks1 = getAppletParameter("diskDrive2", "").split("[|]");
-		disk1 = 0;
-		mountDisk(0, disks0[disk0]);
-		mountDisk(1, disks1[disk1]);
+		diskImageNames[0] = getAppletParameter("diskDrive1", "").split("[|]");
+		diskImageNumber[0] = 0;
+		diskImageNames[1] = getAppletParameter("diskDrive2", "").split("[|]");
+		diskImageNumber[1] = 0;
+		mountDisk(0, diskImageNames[0][diskImageNumber[0]]);
+		mountDisk(1, diskImageNames[1][diskImageNumber[1]]);
 
 		// Start CPU
 		if (!isCpuPaused)
@@ -200,9 +204,9 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	public void pause() {
 		debug("pause()");
 		isCpuPaused = true;
-		apple.setPaused(isCpuPaused);
-		display.setPaused(isCpuPaused);
-		apple.speaker.setPaused(isCpuPaused);
+		apple.setPaused(true);
+		display.setPaused(true);
+		apple.speaker.setPaused(true);
 	}
 
 	/**
@@ -211,9 +215,9 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	public void resume() {
 		debug("resume()");
 		isCpuPaused = false;
-		apple.speaker.setPaused(isCpuPaused);
-		display.setPaused(isCpuPaused);
-		apple.setPaused(isCpuPaused);
+		apple.speaker.setPaused(false);
+		display.setPaused(false);
+		apple.setPaused(false);
 	}
 
 	/**
@@ -222,6 +226,35 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	public void restart() {
 		debug("restart()");
 		apple.restart();
+	}
+
+	public void reset() {
+		debug("reset()");
+		apple.reset();
+	}
+	
+
+	public void setSpeed(int value) {
+		debug("setSpeed(" + value + ")");
+		try
+		{
+			pause();
+			this.wait(1000);
+		}
+		catch (Throwable e)
+		{
+		}
+		apple.setCpuSpeed(value);
+		resume();
+	}
+
+	public void cycleDisk(int driveNumber)
+	{
+		debug("cycleDisk(" + driveNumber + ")");
+		if (diskImageNames[driveNumber].length > 1) {
+			diskImageNumber[driveNumber] = ++diskImageNumber[driveNumber] % diskImageNames[driveNumber].length;
+			mountDisk(driveNumber, diskImageNames[driveNumber][diskImageNumber[driveNumber]]);
+		}
 	}
 	
 	/**
@@ -318,7 +351,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		debug("mountDisk(drive: " + drive + ", resource: " + resource + ")");
 		boolean success = false;
 
-		if ((drive < 0) || (drive > 2))
+		if ((drive < 0) || (drive > 1))
 			return success;
 			
 		try {
@@ -331,6 +364,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 			success = disk.readDisk(drive, is, diskname.toString(), false);
 			is.close();
+			showStatus("Drive " + (drive + 1) + ": " + resource);
 		} catch (Exception e) {
 			debug("Exeption: " + e.getLocalizedMessage());
 		}
@@ -463,7 +497,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			break;
 		case KeyEvent.VK_HOME:
 			if (e.isControlDown())
-				apple.restart();
+				restart();
 			else
 				apple.paddle.setButton(0, true);
 			break;
@@ -474,18 +508,10 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			showStatus("AppleIIGo Version " + version);
 			break;
 		case KeyEvent.VK_F3:
-			if (disks0.length > 1) {
-				disk0 = ++disk0 % disks0.length;
-				mountDisk(0, disks0[disk0]);
-				showStatus("Disk 1: " + disks0[disk0]);
-			}
+			cycleDisk(0);
 			break;
 		case KeyEvent.VK_F4:
-			if (disks1.length > 1) {
-				disk1 = ++disk1 % disks1.length;
-				mountDisk(1, disks1[disk1]);
-				showStatus("Disk 2: " + disks1[disk1]);
-			}
+			cycleDisk(1);
 			break;
 		case KeyEvent.VK_F5:
 			if (isCpuDebugEnabled)
@@ -510,7 +536,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		case KeyEvent.VK_CANCEL: // Ctrl-Pause/Break sends this (N/A on Mac)
 		case KeyEvent.VK_F12:
 			if (e.isControlDown())
-				apple.reset();
+				reset();
 			break;
 		case KeyEvent.VK_KP_LEFT:
 			handleKeypadLeft();
