@@ -2,12 +2,17 @@
 /**
  * AppleIIGo
  * The Java Apple II Emulator 
- * Copyright 2011 by Nick Westgate (Nick.Westgate@gmail.com)
+ * Copyright 2014 by Nick Westgate (Nick.Westgate@gmail.com)
  * Copyright 2006 by Marc S. Ressl (mressl@gmail.com)
  * Released under the GNU General Public License version 2 
  * See http://www.gnu.org/licenses/
  * 
  * Change list:
+ * 
+ * Version 1.0.9 - changes by Nick:
+ * - fixed disk speed-up bug (Sherwood Forest reads with the drive motor off)
+ * - added check for 2IMG header ID
+ * - fixed processor status bugs in BRK, PLP, RTI, NMI, IRQ 
  * 
  * Version 1.0.8 - changes by Nick:
  * - implemented disk writing (only in memory, not persisted)
@@ -80,7 +85,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 	private static final long serialVersionUID = -3302282815441501352L;
 	
-	final String version = "1.0.8";
+	final String version = "1.0.9";
 	final String versionString = "AppleIIGo Version " + version;
 	final String metaStart = "_meta_";
 

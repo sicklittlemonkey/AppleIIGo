@@ -2,8 +2,8 @@
 /**
  * AppleIIGo
  * Disk II Emulator
- * (C) 2006 by Marc S. Ressl(mressl@gmail.com)
- * (C) 2011 by Nick Westgate (Nick.Westgate@gmail.com)
+ * Copyright 2014 by Nick Westgate (Nick.Westgate@gmail.com)
+ * Copyright 2006 by Marc S. Ressl(mressl@gmail.com)
  * Released under the GPL
  * Based on work by Doug Kwan
  */
@@ -38,6 +38,7 @@ public class DiskII extends Peripheral {
 	private static final int DOS_NUM_TRACKS = 35;
 	private static final int DOS_TRACK_BYTES = 256 * DOS_NUM_SECTORS;
 	private static final int RAW_TRACK_BYTES = 0x1A00; // 0x1A00 (6656) for .NIB (was 6250)
+	private static final int STANDARD_2IMG_HEADER_ID = 0x32494D47;
 	private static final int STANDARD_2IMG_HEADER_SIZE = 64;
 	private static final int STANDARD_PRODOS_BLOCKS = 280;
 	
@@ -168,20 +169,8 @@ public class DiskII extends Peripheral {
 				break;
 		}
 		
-        if ((address & 1) == 0)
-        {
-        	// only even addresses return the latch
-        	if (isMotorOn)
-        	{
-        		return latchData;
-        	}
-
-        	// simple hack to fool DOS SAMESLOT drive spin check (usually at $BD34)
-        	driveSpin = !driveSpin;
-        	return driveSpin ? 0x7E : 0x7F;
-        }
-
-		return rand.nextInt(256); // TODO: floating bus
+		// only even addresses return the latch
+		return ((address & 1) == 0) ? latchData : rand.nextInt(256); // TODO: floating bus
     }
 	
 	/**
@@ -247,7 +236,10 @@ public class DiskII extends Peripheral {
 	 * Reset peripheral
 	 */
 	public void reset() {
-		ioRead(0x8);
+		drive = 0;
+		isMotorOn = false;
+		loadMode = false;
+		writeMode = false;
 	}
 
 	/**
@@ -265,6 +257,10 @@ public class DiskII extends Peripheral {
 				// 2IMG, so check if we can handle it
 				byte[] header = new byte[STANDARD_2IMG_HEADER_SIZE];
 				is.readFully(header, 0, STANDARD_2IMG_HEADER_SIZE);
+
+				int id = (header[0x00] << 24) | (header[0x01] << 16) | (header[0x02] << 8) | (header[0x03]);
+				if (id != STANDARD_2IMG_HEADER_ID)
+					return false;
 
 				int headerSize = (header[0x09] << 8) | (header[0x08]);
 				if (headerSize != STANDARD_2IMG_HEADER_SIZE)
@@ -352,6 +348,17 @@ public class DiskII extends Peripheral {
 		loadMode = false;
 		if (!writeMode)
 		{
+        	if (!isMotorOn)
+        	{
+            	// simple hack to fool DOS SAMESLOT drive spin check (usually at $BD34)
+            	driveSpin = !driveSpin;
+            	if (driveSpin)
+            	{
+            		latchData = 0x7F;
+        			return;
+            	}
+        	}
+
 			// Read data: C0xE, C0xC
 			latchData = (realTrack[currNibble] & 0xff);
 
