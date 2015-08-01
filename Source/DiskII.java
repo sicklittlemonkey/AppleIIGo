@@ -3,6 +3,7 @@
  * AppleIIGo
  * Disk II Emulator
  * (C) 2006 by Marc S. Ressl(ressl@lonetree.com)
+ * (C) 2009 by Nick Westgate (Nick.Westgate@gmail.com)
  * Released under the GPL
  * Based on work by Doug Kwan
  */
@@ -35,13 +36,13 @@ public class DiskII extends Peripheral {
 	private static final int DOS_NUM_SECTORS = 16;
 	private static final int DOS_NUM_TRACKS = 35;
 	private static final int DOS_TRACK_BYTES = 256 * DOS_NUM_SECTORS;
-	private static final int RAW_TRACK_BYTES = 6250;
+	private static final int RAW_TRACK_BYTES = 0x1A00; // 0x1A00 (6656) for .NIB (was 6250)
 	
 	// Disk II direct access variables
 	private int drive = 0;
 	private boolean isMotorOn = false;
 
-	private byte[][][] disk = new byte[NUM_DRIVES][DOS_NUM_TRACKS][];
+	private byte[][][] diskData = new byte[NUM_DRIVES][DOS_NUM_TRACKS][];
 	private boolean[] isWriteProtected = new boolean[NUM_DRIVES];
 
 	private int currPhysTrack;
@@ -79,7 +80,7 @@ public class DiskII extends Peripheral {
 		0xED, 0xEE, 0xEF, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6,
 		0xF7, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF,
 	};
-	private int[] gcrDecodingTable = new int[256];
+	//private int[] gcrDecodingTable = new int[256];
 	private int[] gcrSwapBit = {0, 2, 1, 3};
 	private int[] gcrBuffer = new int[256];
 	private int[] gcrBuffer2 = new int[86];
@@ -98,16 +99,17 @@ public class DiskII extends Peripheral {
 	private byte[] gcrNibbles = new byte[RAW_TRACK_BYTES];
 	private int gcrNibblesPos;
 	
-	
-		
+	EmAppleII apple;
+
 	/**
 	 * Constructor
 	 */
-	public DiskII() {
+	public DiskII(EmAppleII apple) {
 		super();
+		this.apple = apple;
 		
-		readDisk(0, null, 254, true, false);
-		readDisk(1, null, 254, true, false);
+		readDisk(0, null, "", false);
+		readDisk(1, null, "", false);
 	}
 	
 	/**
@@ -135,7 +137,7 @@ public class DiskII extends Peripheral {
 					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
 						currPhysTrack++;
 				}
-				realTrack = disk[drive][currPhysTrack >> 1];
+				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0x3:
 				// Q1 on
@@ -147,7 +149,7 @@ public class DiskII extends Peripheral {
 					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
 						currPhysTrack++;
 				}
-				realTrack = disk[drive][currPhysTrack >> 1];
+				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0x5:
 				// Q2 on
@@ -159,7 +161,7 @@ public class DiskII extends Peripheral {
 					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
 						currPhysTrack++;
 				}
-				realTrack = disk[drive][currPhysTrack >> 1];
+				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0x7:
 				// Q3 on
@@ -171,7 +173,7 @@ public class DiskII extends Peripheral {
 					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
 						currPhysTrack++;
 				}
-				realTrack = disk[drive][currPhysTrack >> 1];
+				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0x8:
 				// Motor off
@@ -187,7 +189,7 @@ public class DiskII extends Peripheral {
 				drive = 0;
 				currPhysTrack = driveCurrPhysTrack[drive];
 
-				realTrack = disk[drive][currPhysTrack >> 1];
+				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0xb:
 				// Drive 2
@@ -195,7 +197,7 @@ public class DiskII extends Peripheral {
 				drive = 1;
 				currPhysTrack = driveCurrPhysTrack[drive];
 
-				realTrack = disk[drive][currPhysTrack >> 1];
+				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
 			case 0xc:
 				return ioLatchC();
@@ -270,20 +272,31 @@ public class DiskII extends Peripheral {
 	 * @param	is			InputStream
 	 * @param	drive		Disk II drive
 	 */
-	public boolean readDisk(int drive, DataInputStream is, int volume, boolean dos, boolean isWriteProtected) {
-		byte[] track = new byte[RAW_TRACK_BYTES];
+	public boolean readDisk(int drive, DataInputStream is, String name, boolean isWriteProtected) {
+		byte[] track = new byte[DOS_TRACK_BYTES];
 
+		String lowerDiskname = name.toLowerCase();
+		boolean proDos = lowerDiskname.indexOf(".po") != -1;
+		boolean nib = lowerDiskname.indexOf(".nib") != -1;
+		
 		try {
 			for (int trackNum = 0; trackNum < DOS_NUM_TRACKS; trackNum++) {
-				disk[drive][trackNum] = new byte[RAW_TRACK_BYTES];
+				diskData[drive][trackNum] = new byte[RAW_TRACK_BYTES];
 
 				if (is != null) {
-					is.readFully(track, 0, DOS_TRACK_BYTES);
-					trackToNibbles(track, disk[drive][trackNum], volume, trackNum, dos);
+					if (nib)
+					{
+						is.readFully(diskData[drive][trackNum], 0, RAW_TRACK_BYTES);
+					}
+					else
+					{
+						is.readFully(track, 0, DOS_TRACK_BYTES);
+						trackToNibbles(track, diskData[drive][trackNum], 254, trackNum, !proDos);
+					}
 				}
 			}
 
-			this.realTrack = disk[drive][currPhysTrack >> 1];
+			this.realTrack = diskData[drive][currPhysTrack >> 1];
 			this.isWriteProtected[drive] = isWriteProtected;
 			
 			return true;
@@ -318,18 +331,60 @@ public class DiskII extends Peripheral {
 	 * @param	address	Address
 	 */
 	private int ioLatchC() {
+		latchAddress = 0xc;
 		if (writeMode)
+		{
 			// Write data: C0xD, C0xC
 			realTrack[currNibble] = (byte) latchData;
+		}
 		else
+		{
 			// Read data: C0xE, C0xC
 			latchData = (realTrack[currNibble] & 0xff);
+			
+			// simple hack to help DOS find address prologues ($B94F)
+			if (apple.memoryRead(apple.PC + 3) == 0xD5 && // #$D5
+				latchData != 0xD5 &&
+				apple.memoryRead(apple.PC + 2) == 0xC9 && // CMP
+				apple.memoryRead(apple.PC + 1) == 0xFB && // PC - 3
+				apple.memoryRead(apple.PC + 0) == 0x10)   // BPL
+			{
+				int count = RAW_TRACK_BYTES / 16;
+				do
+				{
+					currNibble++;
+					if (currNibble >= RAW_TRACK_BYTES)
+						currNibble = 0;
+					latchData = (realTrack[currNibble] & 0xff);
+				}
+				while (latchData != 0xD5 && --count > 0);
+			}
+			// simple hack to fool DOS drive spin detect routine ($BD34)
+			else if (apple.memoryRead(apple.PC - 3) == 0xDD && // CMP $C08C,X
+				apple.memoryRead(apple.PC + 1) == 0x03 &&      // PC + 3 
+				apple.memoryRead(apple.PC + 0) == 0xD0)        // BNE
+			{
+				return 0x7F; 
+			}
+			// skip invalid nibbles we padded the track buffer with 
+			else if (latchData == 0x7F)
+			{
+				int count = RAW_TRACK_BYTES / 16;
+				do
+				{
+					currNibble++;
+					if (currNibble >= RAW_TRACK_BYTES)
+						currNibble = 0;
+					latchData = (realTrack[currNibble] & 0xff);
+				}
+				while (latchData == 0x7F && --count > 0);
+			}
+		}
 
 		currNibble++;
 		if (currNibble >= RAW_TRACK_BYTES)
 			currNibble = 0;
 
-		latchAddress = 0xc;
 		return latchData;
 	}
 	
@@ -389,15 +444,24 @@ public class DiskII extends Peripheral {
 	}
 
 	/**
- 	 * Writes sync bits
+ 	 * Writes nibbles
+	 *
+	 * @param	length		Number of bits
+	 */
+	private final void writeNibbles(int nibble, int length) {
+		while(length > 0) {
+			length--;
+			gcrWriteNibble(nibble);
+		}
+	}
+
+	/**
+ 	 * Writes sync nibbles
 	 *
 	 * @param	length		Number of bits
 	 */
 	private final void writeSync(int length) {
-		while(length > 0) {
-			length--;
-			gcrWriteNibble(0xff);
-		}
+		writeNibbles(0xff, length);
 	}
 
 	/**
@@ -504,6 +568,6 @@ public class DiskII extends Peripheral {
 			writeSync(8);
 			writeDataField();
 		}
-		writeSync(RAW_TRACK_BYTES - gcrNibblesPos);
+		writeNibbles(0x7F, RAW_TRACK_BYTES - gcrNibblesPos); // invalid nibbles to skip on read
 	}
 }

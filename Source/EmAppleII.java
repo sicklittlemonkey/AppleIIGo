@@ -188,7 +188,7 @@ public class EmAppleII extends Em6502 implements Runnable {
  	 * Apple II class constructor
 	 */
 	public EmAppleII() {
-		Em6502();
+		super();
 		
 		// Allocate compute memory
 		mem = new byte[MEM_END];

@@ -119,7 +119,7 @@ public class Em6502 {
 	/**
 	 * Constructor
 	 */
-	public void Em6502() {
+	public Em6502() {
 		// Init BCD tables
 		BCDTableAdd = new int[512];
 		BCDTableSub = new int[512];
@@ -161,7 +161,7 @@ public class Em6502 {
 	private final void setC(boolean b) {if (b) P |= FLAG_C; else P &= ~FLAG_C;}
 	private final boolean getN() {return ((P & FLAG_N) != 0);}
 	private final boolean getV() {return ((P & FLAG_V) != 0);}
-	private final boolean getB() {return ((P & FLAG_B) != 0);}
+//	private final boolean getB() {return ((P & FLAG_B) != 0);}
 	private final boolean getD() {return ((P & FLAG_D) != 0);}
 	private final boolean getI() {return ((P & FLAG_I) != 0);}
 	private final boolean getZ() {return ((P & FLAG_Z) != 0);}
@@ -232,9 +232,9 @@ public class Em6502 {
 		// return easp1 + Y;
 		return eaabs() + Y;
 	}
-	private final int eaabsyNC() {
-		return eaabs() + Y;
-	}
+//	private final int eaabsyNC() {
+//		return eaabs() + Y;
+//	}
 
 	/*
 	 * Indirect addressing
@@ -258,11 +258,11 @@ public class Em6502 {
 		// return easp2 + Y;
 		return easp2 + (zeroPageRead((easp1 + 1) & 0xff) << 8) + Y;
 	}
-	private final int eazpindyNC() {
-		easp1 = eaimm();
-		easp2 = zeroPageRead(easp1);
-		return easp2 + (zeroPageRead((easp1 + 1) & 0xff) << 8) + Y;
-	}
+//	private final int eazpindyNC() {
+//		easp1 = eaimm();
+//		easp2 = zeroPageRead(easp1);
+//		return easp2 + (zeroPageRead((easp1 + 1) & 0xff) << 8) + Y;
+//	}
 
 	/*
 	 * New 65C02 addressing mode

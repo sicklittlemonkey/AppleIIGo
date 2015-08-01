@@ -8,6 +8,11 @@
  * 
  * Change list:
  * 
+ * Version 1.0.5 - changes by Nick:
+ * 
+ * - added support for .NIB (nibble) disk images  (also inside ZIP archives)
+ * - added disk speedup hacks for DOS (expect ~2x faster reads)
+ * 
  * Version 1.0.4 - changes by Nick:
  *
  * - added support for .PO (ProDOS order) disk images (also inside ZIP archives)
@@ -55,7 +60,7 @@ import java.util.zip.ZipInputStream;
 public class AppleIIGo extends Applet implements KeyListener, ComponentListener, 
 	MouseListener, MouseMotionListener {
 
-	final String version = "1.0.4";
+	final String version = "1.0.5";
 	final String versionString = "AppleIIGo Version " + version;
 
 	// Class instances
@@ -136,7 +141,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		apple.speaker.setVolume(new Integer(getAppletParameter("speakerVolume", "6")).intValue());
 		
 		// Peripherals
-		disk = new DiskII();
+		disk = new DiskII(apple);
 		apple.setPeripheral(disk, 6);
 
 		// Initialize disk drives
@@ -230,7 +235,13 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		InputStream is = null;
 
 		if (OutFilename != null)
+		{
 			OutFilename.setLength(0);
+			int slashPos = resource.lastIndexOf('/');
+			int backslashPos = resource.lastIndexOf('\\');
+			int index = Math.max(slashPos, backslashPos);
+			OutFilename.append(resource.substring((index > 0) ? index : 0));
+		}
 
 		try {
 			URL url = new URL(getCodeBase(), resource);
@@ -247,17 +258,8 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 				ZipEntry entry = ((ZipInputStream)is).getNextEntry();
 				if (OutFilename != null)
 				{
+					OutFilename.setLength(0);
 					OutFilename.append(entry.getName());
-				}
-			}
-			else
-			{
-				if (OutFilename != null)
-				{
-					int slashPos = resource.lastIndexOf('/');
-					int backslashPos = resource.lastIndexOf('\\');
-					int index = Math.max(slashPos, backslashPos);
-					OutFilename.append(resource.substring((index > 0) ? index : 0));
 				}
 			}
 		} catch (Exception e) {
@@ -326,10 +328,8 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 			StringBuffer diskname = new StringBuffer();
 			DataInputStream is = openInputStream(resource, diskname);
-			String lowerDiskname = diskname.toString().toLowerCase();
-			boolean dos = lowerDiskname.indexOf(".po") == -1;
 
-			success = disk.readDisk(drive, is, 254, dos, false);
+			success = disk.readDisk(drive, is, diskname.toString(), false);
 			is.close();
 		} catch (Exception e) {
 			debug("Exeption: " + e.getLocalizedMessage());
