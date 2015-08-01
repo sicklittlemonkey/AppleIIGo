@@ -58,6 +58,7 @@ public class EmAppleII extends Em6502 implements Runnable {
 	// Peripherals
 	public Paddle paddle;
 	public Peripheral[] slots;
+	public AppleSpeaker speaker;
 	
 	// Graphics	(dirty buffer every 0x80 bytes)
 	public int graphicsMode;
@@ -240,15 +241,11 @@ public class EmAppleII extends Em6502 implements Runnable {
 		return false;
 	}
 	
-	public boolean loadRom(InputStream is) {
+	public boolean loadRom(DataInputStream is) throws IOException {
 		byte[] rom = new byte[0x8000];
 		int offset = 0;
 				
-		try {
-			is.read(rom, 0, 0x08000);
-		} catch (IOException e) {
-			return false;
-		}
+		is.readFully(rom, 0, 0x08000);
 		
 		if (isValidRom(rom, 0x0))
 			offset = 0x0;
@@ -1115,6 +1112,11 @@ public class EmAppleII extends Em6502 implements Runnable {
 
 	/**
  	 * Emulator thread
+ 	 * 
+ 	 * TODO: The speaker has been merged into this thread.
+ 	 * This keeps it in sync but it still needs some work.
+ 	 * Speeding up the CPU (or adding fast disk access as below)
+ 	 * requires proper refactoring of the AppleSpeaker class. 
 	 */
 	public void run() {
 		try {
@@ -1135,6 +1137,10 @@ public class EmAppleII extends Em6502 implements Runnable {
 						clocksNeeded -= executeInstructions(1 + (clocksNeeded >> 3));
 				}
 
+				// TODO: need something like the following for fast disk access
+				//if (slots[6] instanceof DiskII && !((DiskII)slots[6]).isMotorOn())
+
+				speaker.refreshSpeaker(); // NOTE: this blocks, syncing emulation and sound
 				refreshDelay = System.currentTimeMillis() - refreshStart;
 
 				refreshDelayCumulative += refreshDelay;

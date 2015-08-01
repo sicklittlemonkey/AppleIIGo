@@ -265,7 +265,7 @@ public class DiskII extends Peripheral {
 	 * @param	is			InputStream
 	 * @param	drive		Disk II drive
 	 */
-	public boolean readDisk(int drive, InputStream is, int volume, boolean isWriteProtected) {
+	public boolean readDisk(int drive, DataInputStream is, int volume, boolean isWriteProtected) {
 		byte[] track = new byte[RAW_TRACK_BYTES];
 
 		try {
@@ -273,7 +273,7 @@ public class DiskII extends Peripheral {
 				disk[drive][trackNum] = new byte[RAW_TRACK_BYTES];
 
 				if (is != null) {
-					is.read(track, 0, DOS_TRACK_BYTES);
+					is.readFully(track, 0, DOS_TRACK_BYTES);
 					trackToNibbles(track, disk[drive][trackNum], volume, trackNum);
 				}
 			}

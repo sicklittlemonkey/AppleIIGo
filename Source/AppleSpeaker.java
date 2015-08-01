@@ -10,7 +10,7 @@ import javax.sound.sampled.*;
 
 public class AppleSpeaker implements Runnable {
 	// Instances of other classes
-    private EmAppleII apple;
+	private EmAppleII apple;
 
 	// Refresh
 	private int refreshRate;
@@ -29,7 +29,6 @@ public class AppleSpeaker implements Runnable {
 
 	private SourceDataLine line;
 
-	private int bufferSamples;
 	private int bufferSize;
 	private byte[] buffer;
 	
@@ -43,11 +42,8 @@ public class AppleSpeaker implements Runnable {
 	// Thread stuff
 	private boolean isPaused = true;
 	private Thread thread;
-	private String threadError = null;
-
-
 	
-    public AppleSpeaker(EmAppleII apple) {
+	public AppleSpeaker(EmAppleII apple) {
 		this.apple = apple;
 
 		setVolume(4);
@@ -66,14 +62,14 @@ public class AppleSpeaker implements Runnable {
 		refreshInterval = (int) (1000.0 / value);
 
 		speakerClocksPerSample = (int) (apple.getCpuSpeed() * 1000.0f / SPEAKER_SAMPLERATE);
-    }
+	}
 	
 	/**
 	 * Get refresh rate
 	 */
 	private int getRefreshRate() {
 		return refreshRate;
-    }
+	}
 	
 	/**
 	 * Set speaker volume
@@ -94,7 +90,7 @@ public class AppleSpeaker implements Runnable {
 	 */
 	public int getVolume() {
 		return speakerVolume;
-    }
+	}
 	
 	/**
 	 * Set pause state
@@ -130,8 +126,6 @@ public class AppleSpeaker implements Runnable {
 			try {
 				line = (SourceDataLine) AudioSystem.getLine(info);
 				bufferSize = line.getBufferSize();
-				bufferSamples = bufferSize / SPEAKER_SAMPLESIZE;
-
 				buffer = new byte[bufferSize];
 
 				line.open(audioFormat);
@@ -139,15 +133,17 @@ public class AppleSpeaker implements Runnable {
 			} catch (LineUnavailableException e) {
 			}
 
-			thread = new Thread(this);
-			thread.start();
+			// TODO: this thread is not created any more (nick)
+			//thread = new Thread(this);
+			//thread.start();
 		}
 	}
 
 	/**
 	 * Speaker refresh thread
+	 * TODO: this thread is not created any more (nick)
 	 */
-    public void run() {
+	public void run() {
 		try {
 			while (!isPaused) {
 				long refreshStart = System.currentTimeMillis();
@@ -169,7 +165,7 @@ public class AppleSpeaker implements Runnable {
 	/**
 	 * Speaker refresh
 	 */
-    private void refreshSpeaker() {
+	public void refreshSpeaker() {
 		clockEnd = apple.clock;
 		int bytes;
 	
@@ -184,7 +180,7 @@ public class AppleSpeaker implements Runnable {
 	/**
 	 * Fill buffer
 	 */
-    private int fillBuffer() {
+	private int fillBuffer() {
 		int value = speakerFlipStateToVolume[speakerFlipState];
 		int clockEndSample = clockEnd - speakerClocksPerSample;
 		int bufferPointer = 0;
@@ -234,7 +230,7 @@ public class AppleSpeaker implements Runnable {
 			isFlipsBufferEmpty = true;
 		} else {
 			clockNextFlip = apple.speakerFlips[speakerFlipsPointer];
-			speakerFlipsPointer = (speakerFlipsPointer + 1) & apple.SPEAKER_FLIPS_MASK;
+			speakerFlipsPointer = (speakerFlipsPointer + 1) & EmAppleII.SPEAKER_FLIPS_MASK;
 		}
 	}
 }

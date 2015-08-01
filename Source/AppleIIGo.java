@@ -2,17 +2,38 @@
 /**
  * AppleIIGo
  * The Java Apple II Emulator 
- * (C) 2006 by Marc S. Ressl(ressl@lonetree.com)
+ * (C) 2006 by Marc S. Ressl (ressl@lonetree.com)
+ * (C) 2008 by Nick Westgate (Nick.Westgate@gmail.com)
  * Released under the GPL
+ * 
+ * Change list:
+ * 
+ * Version 1.0.2 - changes by Nick:
+ * - improved sound sync by moving AppleSpeaker into the main thread
+ * - added version (F1)
+ * - added multiple disks & switching (F3, F4)
+ * - added ZIP archive support
+ * - fixed HTTP disk image access bug
  */
 
-import java.applet.*;
-import java.io.*;
-import java.net.*;
-import java.util.zip.*;
-import java.awt.*;
-import java.awt.event.*;
-import java.awt.Graphics2D;
+import java.applet.Applet;
+import java.awt.Graphics;
+import java.awt.event.ComponentEvent;
+import java.awt.event.ComponentListener;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
+import java.io.DataInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipInputStream;
 
 /**
  * AppleIIGo class<p>
@@ -20,10 +41,13 @@ import java.awt.Graphics2D;
  */
 public class AppleIIGo extends Applet implements KeyListener, ComponentListener, 
 	MouseListener, MouseMotionListener {
+
+	final String version = "1.0.2";
+	final String versionString = "AppleIIGo Version " + version;
+
 	// Class instances
 	private EmAppleII apple;
 	private AppleDisplay display;
-	private AppleSpeaker speaker;
 	private DiskII disk;
 
 	// Machine variables
@@ -39,6 +63,10 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	// Disk variables
 	private String diskDriveResource[] = new String[2];
 	private boolean diskWritable;
+	private String[] disks0;
+	private String[] disks1;
+	private int disk0;
+	private int disk1;
 
 	/**
  	 * Debug
@@ -91,8 +119,8 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		display.setGlare(getAppletParameter("displayGlare", "false").equals("true"));
 
 		// Speaker
-		speaker = new AppleSpeaker(apple);
-		speaker.setVolume(new Integer(getAppletParameter("speakerVolume", "3")).intValue());
+		apple.speaker = new AppleSpeaker(apple);
+		apple.speaker.setVolume(new Integer(getAppletParameter("speakerVolume", "6")).intValue());
 		
 		// Peripherals
 		disk = new DiskII();
@@ -100,8 +128,12 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 		// Initialize disk drives
 		diskWritable = getAppletParameter("diskWritable", "false").equals("true");
-		mountDisk(0, getAppletParameter("diskDrive1", ""));
-		mountDisk(1, getAppletParameter("diskDrive2", ""));
+		disks0 = getAppletParameter("diskDrive1", "").split("[|]");
+		disk0 = 0;
+		disks1 = getAppletParameter("diskDrive2", "").split("[|]");
+		disk1 = 0;
+		mountDisk(0, disks0[disk0]);
+		mountDisk(1, disks1[disk1]);
 
 		// Start CPU
 		if (!isCpuPaused)
@@ -112,6 +144,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
  	 * Start applet
 	 */
 	public void start() {
+		debug("AppleIIGo Version " + version);
 		debug("start()");
 	}
 
@@ -151,7 +184,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		isCpuPaused = true;
 		apple.setPaused(isCpuPaused);
 		display.setPaused(isCpuPaused);
-//		speaker.setPaused(isCpuPaused);
+		apple.speaker.setPaused(isCpuPaused);
 	}
 
 	/**
@@ -160,7 +193,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	public void resume() {
 		debug("resume()");
 		isCpuPaused = false;
-//		speaker.setPaused(isCpuPaused);
+		apple.speaker.setPaused(isCpuPaused);
 		display.setPaused(isCpuPaused);
 		apple.setPaused(isCpuPaused);
 	}
@@ -176,19 +209,37 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	/**
 	 * Open input stream
 	 */
-	private InputStream openInputStream(String resource) {
+	private DataInputStream openInputStream(String resource) {
 		InputStream is = null;
 		
 		try {
 			URL url = new URL(getCodeBase(), resource);
-			is = url.openStream();
+			debug("resource: " + url.toString());
 
+			is = url.openStream();
 			if (resource.toLowerCase().endsWith(".gz"))
+			{
 				is = new GZIPInputStream(is);
+			}
+			else if (resource.toLowerCase().endsWith(".zip"))
+			{
+				is = new ZipInputStream(is);
+				((ZipInputStream)is).getNextEntry();
+			}
 		} catch (Exception e) {
+			debug("Exeption: " + e.getLocalizedMessage());
 		}
 		
-		return is;
+		if (is == null)
+		{
+			debug("failed");
+			return null;
+		}
+		else
+		{
+			debug("ok");
+			return new DataInputStream(is);
+		}
 	}
 
 	/**
@@ -214,10 +265,11 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		boolean success = false;
 		
 		try {
-			InputStream is = openInputStream(resource);
+			DataInputStream is = openInputStream(resource);
 			success = apple.loadRom(is);
 			is.close();
 		} catch (Exception e) {
+			debug("Exeption: " + e.getLocalizedMessage());
 		}
 		
 		return success;
@@ -238,10 +290,11 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 			diskDriveResource[drive] = resource;
 
-			InputStream is = openInputStream(resource);
+			DataInputStream is = openInputStream(resource);
 			success = disk.readDisk(drive, is, 254, false);
 			is.close();
 		} catch (Exception e) {
+			debug("Exeption: " + e.getLocalizedMessage());
 		}
 		
 		return success;
@@ -310,13 +363,13 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			break;
 		case KeyEvent.VK_UP:
 			if (e.isControlDown())
-				speaker.setVolume(speaker.getVolume() + 1);
+			    apple.speaker.setVolume(apple.speaker.getVolume() + 1);
 			else
 				apple.setKeyLatch(11);
 			break;
 		case KeyEvent.VK_DOWN:
 			if (e.isControlDown())
-				speaker.setVolume(speaker.getVolume() - 1);
+			    apple.speaker.setVolume(apple.speaker.getVolume() - 1);
 			else
 				apple.setKeyLatch(10);
 			break;
@@ -331,6 +384,23 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 				apple.restart();
 			else
 				apple.reset();
+			break;
+		case KeyEvent.VK_F1:
+			showStatus("AppleIIGo Version " + version);
+			break;
+		case KeyEvent.VK_F3:
+			if (disks0.length > 1) {
+				disk0 = ++disk0 % disks0.length;
+				mountDisk(0, disks0[disk0]);
+				showStatus("Disk 1: " + disks0[disk0]);
+			}
+			break;
+		case KeyEvent.VK_F4:
+			if (disks1.length > 1) {
+				disk1 = ++disk1 % disks1.length;
+				mountDisk(1, disks1[disk1]);
+				showStatus("Disk 2: " + disks1[disk1]);
+			}
 			break;
 		case KeyEvent.VK_F5:
 			if (isCpuDebugEnabled)
