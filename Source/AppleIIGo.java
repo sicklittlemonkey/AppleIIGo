@@ -2,12 +2,17 @@
 /**
  * AppleIIGo
  * The Java Apple II Emulator 
- * Copyright 2009 by Nick Westgate (Nick.Westgate@gmail.com)
- * Copyright 2006 by Marc S. Ressl (ressl@lonetree.com)
+ * Copyright 2011 by Nick Westgate (Nick.Westgate@gmail.com)
+ * Copyright 2006 by Marc S. Ressl (mressl@gmail.com)
  * Released under the GNU General Public License version 2 
  * See http://www.gnu.org/licenses/
  * 
  * Change list:
+ * 
+ * Version 1.0.8 - changes by Nick:
+ * - implemented disk writing (only in memory, not persisted)
+ * - added support for .2MG (2IMG) disk images, including lock flag and volume number
+ * - support meta tag for write protect in disk filename eg: NotWritable_Meta_DW0.dsk
  * 
  * Version 1.0.7 - changes by Nick:
  * - fixed disk emulation bug (sense write protect entered write mode)
@@ -75,7 +80,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 
 	private static final long serialVersionUID = -3302282815441501352L;
 	
-	final String version = "1.0.7";
+	final String version = "1.0.8";
 	final String versionString = "AppleIIGo Version " + version;
 	final String metaStart = "_meta_";
 
@@ -200,8 +205,6 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		unmountDisk(0);
 		unmountDisk(1);
 	}
-	
-
 
 	// Public Java interface
 
@@ -247,7 +250,6 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		debug("reset()");
 		apple.reset();
 	}
-	
 
 	public void setSpeed(int value) {
 		debug("setSpeed(" + value + ")");
@@ -292,7 +294,8 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		}
 
 		try {
-			URL url = new URL(getCodeBase(), resource);
+			URL codeBase = getCodeBase();
+			URL url = new URL(codeBase, resource);
 			debug("resource: " + url.toString());
 
 			is = url.openStream();
@@ -378,6 +381,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 			DataInputStream is = openInputStream(resource, diskname);
 			
 			int diskVolumeNumber = DiskII.DEFAULT_VOLUME;
+			boolean diskWritableOverride = diskWritable;
 
 			// handle disk meta tag for disk volume (etc?)
 			// could break this out into a method, but then multiple tags ...?
@@ -427,6 +431,10 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 							case ('d' << 16) + 'v':
 								diskVolumeNumber = operand;
 								break;
+
+							case ('d' << 16) + 'w':
+								diskWritableOverride = (operand != 0);
+								break;
 						}
 						command = 0;
 						operand = 0;
@@ -434,7 +442,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 				}
 			}
 			
-			success = disk.readDisk(drive, is, diskname.toString(), !diskWritable, diskVolumeNumber);
+			success = disk.readDisk(drive, is, diskname.toString(), !diskWritableOverride, diskVolumeNumber);
 			is.close();
 			showStatus("Drive " + (drive + 1) + ": " + resource);
 		} catch (Exception e) {
@@ -455,12 +463,13 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 		if (!diskWritable)
 			return;
 			
-		try {
-			OutputStream os = openOutputStream(diskDriveResource[drive]);
-			disk.writeDisk(drive, os);
-			os.close();
-		} catch (Exception e) {
-		}
+		// TODO: only for local disk cache when it's working
+		//try {
+			//OutputStream os = openOutputStream(diskDriveResource[drive]);
+			//disk.writeDisk(drive, os);
+			//os.close();
+		//} catch (Exception e) {
+		//}
 	}
 
 	/**
@@ -499,6 +508,16 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	 */
 	public boolean getDiskActivity() {
 		return (!isCpuPaused && disk.isMotorOn());
+	}
+
+	public int getSizeX()
+	{
+		return display.getSizeX();
+	}
+
+	public int getSizeY()
+	{
+		return display.getSizeY();
 	}
 
 	/**
@@ -626,7 +645,7 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 				apple.stepInstructions(128);
 			}
 			break;
-		case KeyEvent.VK_CANCEL: // Ctrl-Pause/Break sends this (N/A on Mac)
+		case KeyEvent.VK_CANCEL: // Pause/Break sends this (as Mac OS swallows Ctrl-F12)
 		case KeyEvent.VK_F12:
 			if (e.isControlDown())
 				reset();
@@ -846,5 +865,5 @@ public class AppleIIGo extends Applet implements KeyListener, ComponentListener,
 	 */
 	public void update(Graphics g) {
 		display.paint(g);
-	}	
+	}
 }

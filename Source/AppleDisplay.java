@@ -2,7 +2,7 @@
 /**
  * AppleIIGo
  * Display processing
- * (C) 2006 by Marc S. Ressl (ressl@lonetree.com)
+ * (C) 2006 by Marc S. Ressl (mressl@gmail.com)
  * Released under the GPL
  */
 
@@ -223,6 +223,18 @@ public class AppleDisplay implements Runnable {
 	public float getScale() {
 		return displayScale;
     }
+	
+	public int getSizeX()
+	{
+		precalcDisplay();
+		return displayScaledSizeX;
+	}
+	
+	public int getSizeY()
+	{
+		precalcDisplay();
+		return displayScaledSizeY;
+	}
 	
 	/**
 	 * Set refresh rate

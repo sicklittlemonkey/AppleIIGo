@@ -2,7 +2,7 @@
 /**
  * AppleIIGo
  * Apple II Emulator for J2SE
- * (C) 2006 by Marc S. Ressl(ressl@lonetree.com)
+ * (C) 2006 by Marc S. Ressl(mressl@gmail.com)
  * Released under the GPL
  * Adapted from code by Doug Kwan
  * Adapted from code by Randy Frank randy@tessa.iaf.uiowa.edu

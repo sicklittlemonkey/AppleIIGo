@@ -2,8 +2,8 @@
 /**
  * AppleIIGo
  * Disk II Emulator
- * (C) 2006 by Marc S. Ressl(ressl@lonetree.com)
- * (C) 2009 by Nick Westgate (Nick.Westgate@gmail.com)
+ * (C) 2006 by Marc S. Ressl(mressl@gmail.com)
+ * (C) 2011 by Nick Westgate (Nick.Westgate@gmail.com)
  * Released under the GPL
  * Based on work by Doug Kwan
  */
@@ -32,12 +32,14 @@ public class DiskII extends Peripheral {
 	};	
 
 	// Constants
+	public static final int DEFAULT_VOLUME = 254;
 	private static final int NUM_DRIVES = 2;
 	private static final int DOS_NUM_SECTORS = 16;
 	private static final int DOS_NUM_TRACKS = 35;
 	private static final int DOS_TRACK_BYTES = 256 * DOS_NUM_SECTORS;
 	private static final int RAW_TRACK_BYTES = 0x1A00; // 0x1A00 (6656) for .NIB (was 6250)
-	public static final int DEFAULT_VOLUME = 254;
+	private static final int STANDARD_2IMG_HEADER_SIZE = 64;
+	private static final int STANDARD_PRODOS_BLOCKS = 280;
 	
 	// Disk II direct access variables
 	private int drive = 0;
@@ -66,9 +68,10 @@ public class DiskII extends Peripheral {
 	 */
 
 	// Internal registers
-	private int latchAddress;
 	private int latchData;
 	private boolean writeMode;
+	private boolean loadMode;
+	private boolean driveSpin;
 	
 	// GCR encoding and decoding tables
 	private static final int[] gcrEncodingTable = {
@@ -119,6 +122,283 @@ public class DiskII extends Peripheral {
 	 * @param	address	Address
 	 */
 	public int ioRead(int address) {
+		switch (address & 0xf) {
+			case 0x0:
+			case 0x1:
+			case 0x2:			
+			case 0x3:
+			case 0x4:
+			case 0x5:
+			case 0x6:
+			case 0x7:
+				setPhase(address);
+				break;
+			case 0x8:
+				isMotorOn = false;
+				break;
+			case 0x9:
+				isMotorOn = true;
+				break;
+			case 0xa:
+				setDrive(0);
+				break;
+			case 0xb:
+				setDrive(1);
+				break;
+			case 0xc:
+				ioLatchC();
+				break;
+			case 0xd:
+				loadMode = true;
+				if (isMotorOn && !writeMode)
+				{
+					latchData &= 0x7F;
+					// TODO: check phase - write protect is forced if phase 1 is on [F9.7]
+					if (isWriteProtected[drive])
+					{
+						latchData |= 0x80;
+					}
+				}
+				break;
+			case 0xe:
+				writeMode = false;
+				break;
+			case 0xf:
+				writeMode = true;
+				break;
+		}
+		
+        if ((address & 1) == 0)
+        {
+        	// only even addresses return the latch
+        	if (isMotorOn)
+        	{
+        		return latchData;
+        	}
+
+        	// simple hack to fool DOS SAMESLOT drive spin check (usually at $BD34)
+        	driveSpin = !driveSpin;
+        	return driveSpin ? 0x7E : 0x7F;
+        }
+
+		return rand.nextInt(256); // TODO: floating bus
+    }
+	
+	/**
+	 * I/O write
+	 *
+	 * @param	address	Address
+	 */
+	public void ioWrite(int address, int value) {
+		switch (address & 0xf) {
+			case 0x0:
+			case 0x1:
+			case 0x2:			
+			case 0x3:
+			case 0x4:
+			case 0x5:
+			case 0x6:
+			case 0x7:
+				setPhase(address);
+				break;
+			case 0x8:
+				isMotorOn = false;
+				break;
+			case 0x9:
+				isMotorOn = true;
+				break;
+			case 0xa:
+				setDrive(0);
+				break;
+			case 0xb:
+				setDrive(1);
+				break;
+			case 0xc:
+				ioLatchC();
+				break;
+			case 0xd:
+				loadMode = true;
+				break;
+			case 0xe:
+				writeMode = false;
+				break;
+			case 0xf:
+				writeMode = true;
+				break;
+		}
+		
+		if (isMotorOn && writeMode && loadMode)
+		{
+			// any address writes latch for sequencer LD; OE1/2 irrelevant ['323 datasheet]
+			latchData = value;
+		}
+    }
+	
+	/**
+	 * Memory read
+	 *
+	 * @param	address	Address
+	 */
+    public int memoryRead(int address) {
+		return rom[address & 0xff];
+    }
+
+	/**
+	 * Reset peripheral
+	 */
+	public void reset() {
+		ioRead(0x8);
+	}
+
+	/**
+ 	 * Loads a disk
+	 */
+	public boolean readDisk(int drive, DataInputStream is, String name, boolean isWriteProtected, int volumeNumber) {
+		try {
+			byte[] track = new byte[DOS_TRACK_BYTES];
+			boolean proDos = false;
+			boolean nib = false;
+		
+			String lowerName = name.toLowerCase();
+			if (lowerName.indexOf(".2mg") != -1 || lowerName.indexOf(".2img") != -1)
+			{
+				// 2IMG, so check if we can handle it
+				byte[] header = new byte[STANDARD_2IMG_HEADER_SIZE];
+				is.readFully(header, 0, STANDARD_2IMG_HEADER_SIZE);
+
+				int headerSize = (header[0x09] << 8) | (header[0x08]);
+				if (headerSize != STANDARD_2IMG_HEADER_SIZE)
+					return false;
+				
+				int format = (header[0x0F] << 24) | (header[0x0E] << 16) | (header[0x0D] << 8) | (header[0x0C]);
+				if (format == 1)
+				{
+					proDos = true;
+					int blocks = (header[0x17] << 24) | (header[0x16] << 16) | (header[0x15] << 8) | (header[0x14]);
+					if (blocks != STANDARD_PRODOS_BLOCKS)
+						return false; // only handle standard 5.25 inch images
+				}
+				else if (format == 2)
+				{
+					nib = true;
+				}
+				else if (format != 0)
+				{
+					return false; // if not ProDOS, NIB or DSK
+				}
+				
+				// use write protected and volume number if present
+				int flags = (header[0x13] << 24) | (header[0x12] << 16) | (header[0x11] << 8) | (header[0x10]);
+				if ((flags & (1 << 31)) != 0)
+				{
+					isWriteProtected = true; // only override if set 
+				}
+				if ((flags & (1 << 8)) != 0)
+				{
+					volumeNumber = (flags & 0xFF);
+				}
+			}
+			else
+			{
+				// check for PO and NIB in the name
+				proDos = lowerName.indexOf(".po") != -1;
+				nib = lowerName.indexOf(".nib") != -1;
+			}
+
+			for (int trackNum = 0; trackNum < DOS_NUM_TRACKS; trackNum++) {
+				diskData[drive][trackNum] = new byte[RAW_TRACK_BYTES];
+
+				if (is != null) {
+					if (nib)
+					{
+						is.readFully(diskData[drive][trackNum], 0, RAW_TRACK_BYTES);
+					}
+					else
+					{
+						is.readFully(track, 0, DOS_TRACK_BYTES);
+						trackToNibbles(track, diskData[drive][trackNum], volumeNumber, trackNum, !proDos);
+					}
+				}
+			}
+
+			this.realTrack = diskData[drive][currPhysTrack >> 1];
+			this.isWriteProtected[drive] = isWriteProtected;
+			
+			return true;
+		} catch (IOException e) {
+		}
+	
+		return false;
+	}
+
+	/**
+ 	 * Writes a disk
+	 *
+	 * @param	is			InputStream
+	 * @param	drive		Disk II drive
+	 */
+	public boolean writeDisk(int drive, OutputStream os) {
+		return true;
+	}
+
+	/**
+ 	 * Motor on indicator
+	 */
+	public boolean isMotorOn() {
+		return isMotorOn;
+	}
+
+	private void ioLatchC() {
+		loadMode = false;
+		if (!writeMode)
+		{
+			// Read data: C0xE, C0xC
+			latchData = (realTrack[currNibble] & 0xff);
+
+			// simple hack to help DOS find address prologues ($B94F)
+			if (/* fastDisk && */ // TODO: fastDisk property to enable/disable 
+				apple.memoryRead(apple.PC + 3) == 0xD5 && // #$D5
+				apple.memoryRead(apple.PC + 2) == 0xC9 && // CMP
+				apple.memoryRead(apple.PC + 1) == 0xFB && // PC - 3
+				apple.memoryRead(apple.PC + 0) == 0x10 &&  // BPL
+				latchData != 0xD5) 
+			{
+				int count = RAW_TRACK_BYTES / 16;
+				do
+				{
+					currNibble++;
+					if (currNibble >= RAW_TRACK_BYTES)
+						currNibble = 0;
+					latchData = (realTrack[currNibble] & 0xff);
+				}
+				while (latchData != 0xD5 && --count > 0);
+			}
+			// skip invalid nibbles we padded the track buffer with 
+			else if (latchData == 0x7F) // TODO: maybe the above covers this?
+			{
+				int count = RAW_TRACK_BYTES / 16;
+				do
+				{
+					currNibble++;
+					if (currNibble >= RAW_TRACK_BYTES)
+						currNibble = 0;
+					latchData = (realTrack[currNibble] & 0xff);
+				}
+				while (latchData == 0x7F && --count > 0);
+			}
+		}
+		else
+		{
+			// Write data: C0xD, C0xC
+			realTrack[currNibble] = (byte) latchData;
+		}
+
+		currNibble++;
+		if (currNibble >= RAW_TRACK_BYTES)
+			currNibble = 0;
+	}
+
+	private void setPhase(int address) {
 		int phase;
 		
 		switch (address & 0xf) {
@@ -180,256 +460,14 @@ public class DiskII extends Peripheral {
 				//System.out.println("half track=" + currPhysTrack);
 				realTrack = diskData[drive][currPhysTrack >> 1];
 				break;
-			case 0x8:
-				// Motor off
-				isMotorOn = false;
-				break;
-			case 0x9:
-				// Motor on
-				isMotorOn = true;
-				break;
-			case 0xa:
-				// Drive 1
-				driveCurrPhysTrack[drive] = currPhysTrack;
-				drive = 0;
-				currPhysTrack = driveCurrPhysTrack[drive];
-
-				realTrack = diskData[drive][currPhysTrack >> 1];
-				break;
-			case 0xb:
-				// Drive 2
-				driveCurrPhysTrack[drive] = currPhysTrack;
-				drive = 1;
-				currPhysTrack = driveCurrPhysTrack[drive];
-
-				realTrack = diskData[drive][currPhysTrack >> 1];
-				break;
-			case 0xc:
-				return ioLatchC();
-			case 0xd:
-				ioLatchD(0xff);
-				break;
-			case 0xe:
-				return ioLatchE();
-			case 0xf:
-				ioLatchF(0xff);
-				break;
 		}
-		
-		return rand.nextInt(256);
-    }
-	
-	/**
-	 * I/O write
-	 *
-	 * @param	address	Address
-	 */
-	public void ioWrite(int address, int value) {
-		switch (address & 0xf) {
-			case 0x0:
-			case 0x1:
-			case 0x2:			
-			case 0x3:
-			case 0x4:
-			case 0x5:
-			case 0x6:
-			case 0x7:
-			case 0x8:
-			case 0x9:
-			case 0xa:
-			case 0xb:
-				ioRead(address);
-				break;
-			case 0xc:
-				ioLatchC();
-				break;
-			case 0xd:
-				ioLatchD(value);
-				break;
-			case 0xe:
-				ioLatchE();
-				break;
-			case 0xf:
-				ioLatchF(value);
-				break;
-		}
-    }
-	
-	/**
-	 * Memory read
-	 *
-	 * @param	address	Address
-	 */
-    public int memoryRead(int address) {
-		return rom[address & 0xff];
-    }
-
-	/**
-	 * Reset peripheral
-	 */
-	public void reset() {
-		ioRead(0x8);
 	}
 
-	/**
- 	 * Loads a disk
-	 *
-	 * @param	is			InputStream
-	 * @param	drive		Disk II drive
-	 */
-	public boolean readDisk(int drive, DataInputStream is, String name, boolean isWriteProtected, int volumeNumber) {
-		byte[] track = new byte[DOS_TRACK_BYTES];
-
-		String lowerName = name.toLowerCase();
-		boolean proDos = lowerName.indexOf(".po") != -1;
-		boolean nib = lowerName.indexOf(".nib") != -1;
-		
-		try {
-			for (int trackNum = 0; trackNum < DOS_NUM_TRACKS; trackNum++) {
-				diskData[drive][trackNum] = new byte[RAW_TRACK_BYTES];
-
-				if (is != null) {
-					if (nib)
-					{
-						is.readFully(diskData[drive][trackNum], 0, RAW_TRACK_BYTES);
-					}
-					else
-					{
-						is.readFully(track, 0, DOS_TRACK_BYTES);
-						trackToNibbles(track, diskData[drive][trackNum], volumeNumber, trackNum, !proDos);
-					}
-				}
-			}
-
-			this.realTrack = diskData[drive][currPhysTrack >> 1];
-			this.isWriteProtected[drive] = isWriteProtected;
-			
-			return true;
-		} catch (IOException e) {
-		}
-	
-		return false;
-	}
-
-	/**
- 	 * Writes a disk
-	 *
-	 * @param	is			InputStream
-	 * @param	drive		Disk II drive
-	 */
-	public boolean writeDisk(int drive, OutputStream os) {
-		return true;
-	}
-
-	/**
- 	 * Motor on indicator
-	 */
-	public boolean isMotorOn() {
-		return isMotorOn;
-	}
-
-
-
-	/**
-	 * I/O read Latch C
-	 *
-	 * @param	address	Address
-	 */
-	private int ioLatchC() {
-		latchAddress = 0xc;
-		if (writeMode)
-		{
-			// Write data: C0xD, C0xC
-			realTrack[currNibble] = (byte) latchData;
-		}
-		else
-		{
-			// Read data: C0xE, C0xC
-			latchData = (realTrack[currNibble] & 0xff);
-
-			// simple hack to help DOS find address prologues ($B94F)
-			if (/* fastDisk && */ latchData != 0xD5 && // TODO: fastDisk property to enable/disable 
-				apple.memoryRead(apple.PC + 3) == 0xD5 && // #$D5
-				apple.memoryRead(apple.PC + 2) == 0xC9 && // CMP
-				apple.memoryRead(apple.PC + 1) == 0xFB && // PC - 3
-				apple.memoryRead(apple.PC + 0) == 0x10)   // BPL
-			{
-				int count = RAW_TRACK_BYTES / 16;
-				do
-				{
-					currNibble++;
-					if (currNibble >= RAW_TRACK_BYTES)
-						currNibble = 0;
-					latchData = (realTrack[currNibble] & 0xff);
-				}
-				while (latchData != 0xD5 && --count > 0);
-			}
-			// simple hack to fool DOS 3.3 RWTS drive spin detect routine ($BD34)
-			else if (apple.memoryRead(apple.PC - 3) == 0xDD && // CMP $C08C,X
-				apple.memoryRead(apple.PC + 1) == 0x03 &&      // PC + 3 
-				apple.memoryRead(apple.PC + 0) == 0xD0)        // BNE
-			{
-				return 0x7F; 
-			}
-			// skip invalid nibbles we padded the track buffer with 
-			else if (latchData == 0x7F)
-			{
-				int count = RAW_TRACK_BYTES / 16;
-				do
-				{
-					currNibble++;
-					if (currNibble >= RAW_TRACK_BYTES)
-						currNibble = 0;
-					latchData = (realTrack[currNibble] & 0xff);
-				}
-				while (latchData == 0x7F && --count > 0);
-			}
-		}
-
-		currNibble++;
-		if (currNibble >= RAW_TRACK_BYTES)
-			currNibble = 0;
-
-		return latchData;
-	}
-	
-	/**
-	 * I/O write Latch D
-	 *
-	 * @param	address	Address
-	 */
-	private void ioLatchD(int value) {
-		// Prepare for write protect sense
-		latchAddress = 0xd;
-	}
-	
-	/**
-	 * I/O read Latch E
-	 *
-	 * @param	address	Address
-	 */
-	private int ioLatchE() {
-		// Read write-protect: C0xD, C0xE
-		if (latchAddress == 0xd) {
-			latchAddress = 0xe;
-			return isWriteProtected[drive] ? 0x80 : 0x00;
-		}
-
-		writeMode = false;
-		latchAddress = 0xe;
-		return 0x3c;
-	}
-
-	/**
-	 * I/O write Latch F
-	 *
-	 * @param	address	Address
-	 */
-	private void ioLatchF(int value) {
-		// Prepare write
-		writeMode = true;
-		latchData = value;
-		latchAddress = 0xf;
+	private void setDrive(int newDrive) {
+		driveCurrPhysTrack[drive] = currPhysTrack;
+		drive = newDrive;
+		currPhysTrack = driveCurrPhysTrack[drive];
+		realTrack = diskData[drive][currPhysTrack >> 1];
 	}
 
 	/**
