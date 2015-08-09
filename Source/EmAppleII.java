@@ -264,6 +264,17 @@ public class EmAppleII extends Em6502 implements Runnable {
 		System.arraycopy(rom, offset + 0x3000, mem, MEM_ROM_INTERNAL + 0x00000, 0x01000);
 		System.arraycopy(rom, offset + 0x3800, mem, MEM_ROM_EXTERNAL + 0x00800, 0x00800);
 
+		for (int slot = 0x100; slot <= 0x700; slot += 0x100)
+		{
+			if (mem[MEM_ROM_EXTERNAL + slot] == 0)
+			{
+				// 0 data is a bad default for empty external slots (e.g. Mabel's Mansion reboots)
+				// so ideally we would emulate the floating bus, but for now we just hardcode 0xA0
+				for (int i = 0; i <= 0xFF; i++)
+					mem[MEM_ROM_EXTERNAL + slot + i] = (byte)0xA0;
+			}
+		}
+
 		return true;
 	}
 

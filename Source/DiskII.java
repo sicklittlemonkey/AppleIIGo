@@ -2,7 +2,7 @@
 /**
  * AppleIIGo
  * Disk II Emulator
- * Copyright 2014 by Nick Westgate (Nick.Westgate@gmail.com)
+ * Copyright 2015 by Nick Westgate (Nick.Westgate@gmail.com)
  * Copyright 2006 by Marc S. Ressl(mressl@gmail.com)
  * Released under the GPL
  * Based on work by Doug Kwan
@@ -36,6 +36,7 @@ public class DiskII extends Peripheral {
 	private static final int NUM_DRIVES = 2;
 	private static final int DOS_NUM_SECTORS = 16;
 	private static final int DOS_NUM_TRACKS = 35;
+	private static final int MAX_PHYS_TRACK = (2 * DOS_NUM_TRACKS) - 1;
 	private static final int DOS_TRACK_BYTES = 256 * DOS_NUM_SECTORS;
 	private static final int RAW_TRACK_BYTES = 0x1A00; // 0x1A00 (6656) for .NIB (was 6250)
 	private static final int STANDARD_2IMG_HEADER_ID = 0x32494D47;
@@ -44,6 +45,7 @@ public class DiskII extends Peripheral {
 	
 	// Disk II direct access variables
 	private int drive = 0;
+	private int phases = 0;
 	private boolean isMotorOn = false;
 
 	private byte[][][] diskData = new byte[NUM_DRIVES][DOS_NUM_TRACKS][];
@@ -72,7 +74,7 @@ public class DiskII extends Peripheral {
 	private int latchData;
 	private boolean writeMode;
 	private boolean loadMode;
-	private boolean driveSpin;
+	private int driveSpin;
 	
 	// GCR encoding and decoding tables
 	private static final int[] gcrEncodingTable = {
@@ -348,28 +350,29 @@ public class DiskII extends Peripheral {
 		loadMode = false;
 		if (!writeMode)
 		{
-        	if (!isMotorOn)
-        	{
-            	// simple hack to fool DOS SAMESLOT drive spin check (usually at $BD34)
-            	driveSpin = !driveSpin;
-            	if (driveSpin)
-            	{
-            		latchData = 0x7F;
-        			return;
-            	}
-        	}
+			if (!isMotorOn)
+			{
+				// simple hack to fool RWTS SAMESLOT drive spin check (usually at $BD34)
+				driveSpin = (driveSpin + 1) & 0xF;
+				if (driveSpin == 0)
+				{
+					latchData = 0x7F;
+					return;
+				}
+			}
 
 			// Read data: C0xE, C0xC
 			latchData = (realTrack[currNibble] & 0xff);
 
-			// simple hack to help DOS find address prologues ($B94F)
+			// is RWTS looking for an address prologue? (RDADR)
 			if (/* fastDisk && */ // TODO: fastDisk property to enable/disable 
 				apple.memoryRead(apple.PC + 3) == 0xD5 && // #$D5
-				apple.memoryRead(apple.PC + 2) == 0xC9 && // CMP
+				apple.memoryRead(apple.PC + 2) == 0xC9 && // CMP (usually at $B94F)
 				apple.memoryRead(apple.PC + 1) == 0xFB && // PC - 3
 				apple.memoryRead(apple.PC + 0) == 0x10 &&  // BPL
 				latchData != 0xD5) 
 			{
+				// Y: find the next address prologues
 				int count = RAW_TRACK_BYTES / 16;
 				do
 				{
@@ -380,8 +383,8 @@ public class DiskII extends Peripheral {
 				}
 				while (latchData != 0xD5 && --count > 0);
 			}
-			// skip invalid nibbles we padded the track buffer with 
-			else if (latchData == 0x7F) // TODO: maybe the above covers this?
+			// N: skip invalid nibbles we padded the track buffer with 
+			else if (latchData == 0x7F)
 			{
 				int count = RAW_TRACK_BYTES / 16;
 				do
@@ -406,68 +409,42 @@ public class DiskII extends Peripheral {
 	}
 
 	private void setPhase(int address) {
-		int phase;
-		
-		switch (address & 0xf) {
-			case 0x0:
-			case 0x2:			
-			case 0x4:
-			case 0x6:
-				// Q0, Q1, Q2, Q3 off
-				break;
-			case 0x1:
-				// Q0 on
-				phase = currPhysTrack & 3;
-				if (phase == 1) {
-					if (currPhysTrack > 0)
-						currPhysTrack--;
-				} else if (phase == 3) {
-					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
-						currPhysTrack++;
-				}
-				//System.out.println("half track=" + currPhysTrack);
-				realTrack = diskData[drive][currPhysTrack >> 1];
-				break;
-			case 0x3:
-				// Q1 on
-				phase = currPhysTrack & 3;
-				if (phase == 2) {
-					if (currPhysTrack > 0)
-						currPhysTrack--;
-				} else if (phase == 0) {
-					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
-						currPhysTrack++;
-				}
-				//System.out.println("half track=" + currPhysTrack);
-				realTrack = diskData[drive][currPhysTrack >> 1];
-				break;
-			case 0x5:
-				// Q2 on
-				phase = currPhysTrack & 3;
-				if (phase == 3) {
-					if (currPhysTrack > 0)
-						currPhysTrack--;
-				} else if (phase == 1) {
-					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
-						currPhysTrack++;
-				}
-				//System.out.println("half track=" + currPhysTrack);
-				realTrack = diskData[drive][currPhysTrack >> 1];
-				break;
-			case 0x7:
-				// Q3 on
-				phase = currPhysTrack & 3;
-				if (phase == 0) {
-					if (currPhysTrack > 0)
-						currPhysTrack--;
-				} else if (phase == 2) {
-					if (currPhysTrack < ((2 * DOS_NUM_TRACKS) - 1))
-						currPhysTrack++;
-				}
-				//System.out.println("half track=" + currPhysTrack);
-				realTrack = diskData[drive][currPhysTrack >> 1];
-				break;
+		int phase = (address >> 1) & 3;
+		int phase_bit = (1 << phase);
+
+		// update the magnet states
+		if ((address & 1) != 0)
+		{
+			// phase on
+			phases |= phase_bit;
 		}
+		else
+		{
+			// phase off
+			phases &= ~phase_bit;
+		}
+
+		// check for any stepping effect from a magnet
+		// - move only when the magnet opposite the cog is off
+		// - move in the direction of an adjacent magnet if one is on
+		// - do not move if both adjacent magnets are on
+		// momentum and timing are not accounted for ... maybe one day!
+		int direction = 0;
+		if ((phases & (1 << ((currPhysTrack + 1) & 3))) != 0)
+			direction += 1;
+		if ((phases & (1 << ((currPhysTrack + 3) & 3))) != 0)
+			direction -= 1;
+
+		// apply magnet step, if any
+		if (direction != 0)
+		{
+			currPhysTrack += direction;
+			if (currPhysTrack < 0)
+				currPhysTrack = 0;
+			else if (currPhysTrack > MAX_PHYS_TRACK)
+				currPhysTrack = MAX_PHYS_TRACK;
+		}
+		realTrack = diskData[drive][currPhysTrack >> 1];
 	}
 
 	private void setDrive(int newDrive) {

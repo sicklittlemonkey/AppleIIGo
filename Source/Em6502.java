@@ -80,7 +80,7 @@ public class Em6502 {
 	public static final int FLAG_I = (1 << 2);
 	public static final int FLAG_D = (1 << 3);
 	public static final int FLAG_B = (1 << 4);
-	public static final int FLAG_R = (1 << 6);
+	public static final int FLAG_R = (1 << 5);
 	public static final int FLAG_V = (1 << 6);
 	public static final int FLAG_N = (1 << 7);
 	/*
@@ -123,7 +123,7 @@ public class Em6502 {
 	 * Constructor
 	 */
 	public Em6502() {
-//		createRunFile();
+//		createRunFile(); // TODO: for debugging - disable
 		
 		// Init BCD tables
 		BCDTableAdd = new int[512];
@@ -163,7 +163,7 @@ public class Em6502 {
 	 */
 	private final void setN(boolean b) {if (b) P |= FLAG_N; else P &= ~FLAG_N;}
 	private final void setV(boolean b) {if (b) P |= FLAG_V; else P &= ~FLAG_V;}
-	private final void setB(boolean b) {if (b) P |= FLAG_B; else P &= ~FLAG_B;}
+//	private final void setB(boolean b) {if (b) P |= FLAG_B; else P &= ~FLAG_B;}
 	private final void setD(boolean b) {if (b) P |= FLAG_D; else P &= ~FLAG_D;}
 	private final void setI(boolean b) {if (b) P |= FLAG_I; else P &= ~FLAG_I;}
 	private final void setZ(boolean b) {if (b) P |= FLAG_Z; else P &= ~FLAG_Z;}
@@ -304,38 +304,47 @@ public class Em6502 {
 	}
 
 //	private PrintWriter runFile;
+//	private boolean runFlag = false;
+//
 //	private void createRunFile()
 //	{
 //		try
 //		{
-//			runFile = new PrintWriter("C:\\Users\\Public\\AppleIIGoRun.txt");
+//			//runFile = new PrintWriter("C:\\Dev\\Emulators\\AppleIIGo\\AppleIIGoRun.txt");
 //		}
 //		catch (Exception ex)
 //		{
 //			// swallow
 //		}
 //	}
+//
 //	private final void writeRunFile(int opcode)
 //	{
-//        if (
-//        		(PC > 0x0500)
-//        		&&
-//        		(PC < 0x0600)
-//        	)
-//        {
-//			setN(getFN());
-//			setZ(getFZ());
-//			setC(getFC());
+//		if (PC == 0x2000)
+//			runFlag = true;
+//		if (
+//				runFlag &&
+//				(PC > 0x1000)
+//				&&
+//				(PC < 0xC000)
+//			)
+//		{
+//			if (runFile != null)
+//			{
+//				setN(getFN());
+//				setZ(getFZ());
+//				setC(getFC());
 //
-//			runFile.printf("%04X-%02X P=%02X A=%02X\r\n", PC, opcode, P, A);
-//			runFile.flush();
-//        }
+//				runFile.printf("%04X-%02X P=%02X A=%02X\r\n", PC, opcode, P, A);
+//				runFile.flush();
+//			}
+//		}
 //	}
 	
 	/** This executes a single instruction. */
 	private final void executeInstruction() {
 		opcode = memoryRead(PC);
-//		writeRunFile(opcode);
+//		writeRunFile(opcode); // TODO: for debugging = disable
 		PC++;
 		
 		switch(opcode) {
@@ -569,12 +578,13 @@ public class Em6502 {
 			break;
 			
 		case 0x00:	// BRK
+			PC++;
 			push(PC >> 8);	// save PCH, PCL & P
 			push(PC);
 			setN(getFN());
 			setZ(getFZ());
 			setC(getFC());
-			push(P); // break flag is always set
+			push(P); // B and R always set
 			setI(true);
 			PC = memoryRead(0xfffe);
 			PC |= memoryRead(0xffff) << 8;
@@ -1081,7 +1091,7 @@ public class Em6502 {
 			break;
 			
 		case 0x28:	// PLP
-			P = pop() | FLAG_B | FLAG_R; // fix bug in bit5 of P
+			P = pop() | FLAG_B | FLAG_R; // B and R always set
 			setFC(getC());
 			setFNZ(getN(), getZ());
 			clock += 4;
@@ -1182,7 +1192,7 @@ public class Em6502 {
 			break;
 			
 		case 0x40:	// RTI
-			P = pop() | FLAG_B | FLAG_R; // bit 5 bug of 6502
+			P = pop() | FLAG_B | FLAG_R; // B and R always set
 			setFC(getC());
 			setFNZ(getN(), getZ());
 			PC = pop();	// splitting is necessary
